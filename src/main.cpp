@@ -626,12 +626,16 @@ bool IsStandardTx(const CTransaction& tx, string& reason)
             reason = "scriptsig-not-pushonly";
             return false;
         }
+
+        /* We check input ordering in AreInputsStandard */
     }
 
     unsigned int nDataOut = 0;
     txnouttype whichType;
-    BOOST_FOREACH(const CTxOut& txout, tx.vout) {
-        if (!::IsStandard(txout.scriptPubKey, whichType)) {
+	std::vector<CTxOut>::const_iterator itout, prevout = tx.vout.end();
+
+    for (itout = tx.vout.begin(); itout != tx.vout.end(); ++itout) {
+        if (!::IsStandard(itout->scriptPubKey, whichType)) {
             reason = "scriptpubkey";
             return false;
         }
@@ -641,10 +645,17 @@ bool IsStandardTx(const CTransaction& tx, string& reason)
         else if ((whichType == TX_MULTISIG) && (!fIsBareMultisigStd)) {
             reason = "bare-multisig";
             return false;
-        } else if (txout.IsDust(::minRelayTxFee)) {
+        } else if (itout->IsDust(::minRelayTxFee)) {
             reason = "dust";
             return false;
-        }
+        } else if (prevout != tx.vout.end()) {
+			CanonicalOutputCompare cmp;
+			if (!cmp(*prevout, *itout)) {
+				reason = "output-order";
+				return false;
+			}
+		}
+		prevout = itout;
     }
 
     // only one OP_RETURN txout is permitted
@@ -682,12 +693,16 @@ bool IsFinalTx(const CTransaction &tx, int nBlockHeight, int64_t nBlockTime)
  *    not consumed by scriptPubKey (or P2SH script)
  * 2. P2SH scripts with a crazy number of expensive
  *    CHECKSIG/CHECKMULTISIG operations
+ *
+ * We also check ordering here, since we know which
+ * use SIGHASH_SINGLE.
  */
 bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
 {
     if (tx.IsCoinBase())
         return true; // Coinbases don't use vin normally
 
+    int prev_non_sighashsingle = -1;
     for (unsigned int i = 0; i < tx.vin.size(); i++)
     {
         const CTxOut& prev = mapInputs.GetOutputFor(tx.vin[i]);
@@ -709,7 +724,8 @@ bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
         // IsStandardTx() will have already returned false
         // and this method isn't called.
         vector<vector<unsigned char> > stack;
-        if (!EvalScript(stack, tx.vin[i].scriptSig, SCRIPT_VERIFY_NONE, BaseSignatureChecker()))
+        bool uses_sighash_single;
+        if (!EvalScript(stack, tx.vin[i].scriptSig, SCRIPT_VERIFY_NONE, BaseSignatureChecker(), NULL, &uses_sighash_single))
             return false;
 
         if (whichType == TX_SCRIPTHASH)
@@ -737,6 +753,14 @@ bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
 
         if (stack.size() != (unsigned int)nArgsExpected)
             return false;
+
+        if (!uses_sighash_single) {
+            CanonicalInputCompare cmp;
+            if (prev_non_sighashsingle != -1 && !cmp(tx.vin[prev_non_sighashsingle], tx.vin[i])) {
+                return false;
+            }
+            prev_non_sighashsingle = i;
+        }
     }
 
     return true;

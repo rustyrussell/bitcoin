@@ -34,6 +34,14 @@ inline bool set_error(ScriptError* ret, const ScriptError serror)
     return false;
 }
 
+inline bool sig_is_sighash_single(const valtype &vchSig)
+{
+    if (vchSig.empty())
+        return false;
+    int nHashType = vchSig.back();
+    return (nHashType & 0x1f) == SIGHASH_SINGLE;
+}
+
 } // anon namespace
 
 bool CastToBool(const valtype& vch)
@@ -235,7 +243,7 @@ bool static CheckMinimalPush(const valtype& data, opcodetype opcode) {
     return true;
 }
 
-bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, ScriptError* serror)
+bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, ScriptError* serror, bool* uses_sighash_single)
 {
     static const CScriptNum bnZero(0);
     static const CScriptNum bnOne(1);
@@ -257,6 +265,10 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, un
         return set_error(serror, SCRIPT_ERR_SCRIPT_SIZE);
     int nOpCount = 0;
     bool fRequireMinimal = (flags & SCRIPT_VERIFY_MINIMALDATA) != 0;
+
+    if (uses_sighash_single) {
+        *uses_sighash_single = false;
+    }
 
     try
     {
@@ -798,6 +810,10 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, un
                     // Drop the signature, since there's no way for a signature to sign itself
                     scriptCode.FindAndDelete(CScript(vchSig));
 
+                    if (uses_sighash_single && sig_is_sighash_single(vchSig)) {
+                        *uses_sighash_single = true;
+                    }                          
+
                     if (!CheckSignatureEncoding(vchSig, flags, serror) || !CheckPubKeyEncoding(vchPubKey, flags, serror)) {
                         //serror is set
                         return false;
@@ -853,6 +869,10 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, un
                     {
                         valtype& vchSig = stacktop(-isig-k);
                         scriptCode.FindAndDelete(CScript(vchSig));
+
+                        if (uses_sighash_single && sig_is_sighash_single(vchSig)) {
+                            *uses_sighash_single = true;
+                        }
                     }
 
                     bool fSuccess = true;

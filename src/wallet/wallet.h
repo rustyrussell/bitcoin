@@ -437,7 +437,7 @@ public:
 };
 
 // As seen in BIP Canonical Input and Output Ordering
-struct CanonicalInputCompare
+struct CanonicalWalletInputCompare
 {
     inline bool operator () (const std::pair<const CWalletTx*,unsigned int>& lhs,
 			     const std::pair<const CWalletTx*,unsigned int>& rhs)
@@ -449,18 +449,6 @@ struct CanonicalInputCompare
     }
 };
 
-struct CanonicalOutputCompare
-{
-    inline bool operator () (const CTxOut &lhs, const CTxOut &rhs)
-    {
-	if (lhs.nValue != rhs.nValue) {
-	    return lhs.nValue < rhs.nValue;
-	}
-	// Lexographical compare does what we want
-	return rhs.scriptPubKey < rhs.scriptPubKey;
-    }
-};
-
 /** 
  * A CWallet is an extension of a keystore, which also maintains a set of transactions and balances,
  * and provides the ability to create new transactions.
@@ -468,7 +456,7 @@ struct CanonicalOutputCompare
 class CWallet : public CCryptoKeyStore, public CValidationInterface
 {
 private:
-    bool SelectCoins(const CAmount& nTargetValue, std::set<std::pair<const CWalletTx*,unsigned int>, CanonicalInputCompare >& setCoinsRet, CAmount& nValueRet, const CCoinControl *coinControl = NULL) const;
+    bool SelectCoins(const CAmount& nTargetValue, std::set<std::pair<const CWalletTx*,unsigned int>, CanonicalWalletInputCompare >& setCoinsRet, CAmount& nValueRet, const CCoinControl *coinControl = NULL) const;
 
     CWalletDB *pwalletdbEncryption;
 
@@ -514,7 +502,7 @@ public:
     MasterKeyMap mapMasterKeys;
     unsigned int nMasterKeyMaxID;
 
-    typedef std::set<std::pair<const CWalletTx*,unsigned int>, CanonicalInputCompare > OrderedCoinSet;
+    typedef std::set<std::pair<const CWalletTx*,unsigned int>, CanonicalWalletInputCompare > OrderedCoinSet;
 
     CWallet()
     {

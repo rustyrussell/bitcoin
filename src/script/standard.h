@@ -92,4 +92,27 @@ bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, std::
 CScript GetScriptForDestination(const CTxDestination& dest);
 CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys);
 
+// As seen in BIP Canonical Input and Output Ordering
+struct CanonicalInputCompare
+{
+    inline bool operator () (const CTxIn& lhs, const CTxIn& rhs)
+    {
+	if (lhs.prevout.n != rhs.prevout.n) {
+	    return lhs.prevout.n < rhs.prevout.n;
+	}
+	return lhs.prevout.hash < rhs.prevout.hash;
+    }
+};
+
+struct CanonicalOutputCompare
+{
+    inline bool operator () (const CTxOut &lhs, const CTxOut &rhs)
+    {
+	if (lhs.nValue != rhs.nValue) {
+	    return lhs.nValue < rhs.nValue;
+	}
+	// Lexographical compare does what we want
+	return rhs.scriptPubKey < rhs.scriptPubKey;
+    }
+};
 #endif // BITCOIN_SCRIPT_STANDARD_H
