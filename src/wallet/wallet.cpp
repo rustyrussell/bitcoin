@@ -1563,7 +1563,7 @@ static void ApproximateBestSubset(vector<pair<CAmount, pair<const CWalletTx*,uns
 }
 
 bool CWallet::SelectCoinsMinConf(const CAmount& nTargetValue, int nConfMine, int nConfTheirs, vector<COutput> vCoins,
-                                 set<pair<const CWalletTx*,unsigned int> >& setCoinsRet, CAmount& nValueRet) const
+                                 OrderedCoinSet& setCoinsRet, CAmount& nValueRet) const
 {
     setCoinsRet.clear();
     nValueRet = 0;
@@ -1663,7 +1663,7 @@ bool CWallet::SelectCoinsMinConf(const CAmount& nTargetValue, int nConfMine, int
     return true;
 }
 
-bool CWallet::SelectCoins(const CAmount& nTargetValue, set<pair<const CWalletTx*,unsigned int> >& setCoinsRet, CAmount& nValueRet, const CCoinControl* coinControl) const
+bool CWallet::SelectCoins(const CAmount& nTargetValue, OrderedCoinSet& setCoinsRet, CAmount& nValueRet, const CCoinControl* coinControl) const
 {
     vector<COutput> vCoins;
     AvailableCoins(vCoins, true, coinControl);
@@ -1783,14 +1783,15 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend,
                     txNew.vout.push_back(txout);
                 }
 
-                // Choose coins to use
-                set<pair<const CWalletTx*,unsigned int> > setCoins;
+                // Choose coins to use (canonically sorted)
+                OrderedCoinSet setCoins;
                 CAmount nValueIn = 0;
                 if (!SelectCoins(nTotalValue, setCoins, nValueIn, coinControl))
                 {
                     strFailReason = _("Insufficient funds");
                     return false;
                 }
+
                 BOOST_FOREACH(PAIRTYPE(const CWalletTx*, unsigned int) pcoin, setCoins)
                 {
                     CAmount nCredit = pcoin.first->vout[pcoin.second].nValue;
@@ -1871,14 +1872,14 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend,
                     }
                     else
                     {
-                        // Insert change txn at random position:
-                        nChangePosRet = GetRandInt(txNew.vout.size()+1);
-                        vector<CTxOut>::iterator position = txNew.vout.begin()+nChangePosRet;
-                        txNew.vout.insert(position, newTxOut);
+                        txNew.vout.push_back(newTxOut);
                     }
                 }
                 else
                     reservekey.ReturnKey();
+
+                // Sort vout into canonical ordering.
+                std::sort(txNew.vout.begin(), txNew.vout.end(), CanonicalOutputCompare());
 
                 // Fill vin
                 //

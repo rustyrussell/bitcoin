@@ -436,7 +436,34 @@ public:
     }
 };
 
+// As seen in BIP Canonical Input and Output Ordering
+struct CanonicalInputCompare
+{
+    inline bool operator () (const std::pair<const CWalletTx*,unsigned int>& lhs,
+                             const std::pair<const CWalletTx*,unsigned int>& rhs)
+    {
+        // First sort by input hash
+        int ret = cmp(lhs.first->GetHash(), rhs.first->GetHash());
+        if (ret != 0) {
+            return ret < 0;
+        }
+        // Then sort by input index
+        return lhs.second < rhs.second;
+    }
+};
 
+struct CanonicalOutputCompare
+{
+    inline bool operator () (const CTxOut &lhs, const CTxOut &rhs)
+    {
+        // First sort by amount.
+        if (lhs.nValue != rhs.nValue) {
+            return lhs.nValue < rhs.nValue;
+        }
+        // Then lexographical sort by script.
+        return rhs.scriptPubKey < rhs.scriptPubKey;
+    }
+};
 
 /** 
  * A CWallet is an extension of a keystore, which also maintains a set of transactions and balances,
@@ -445,7 +472,7 @@ public:
 class CWallet : public CCryptoKeyStore, public CValidationInterface
 {
 private:
-    bool SelectCoins(const CAmount& nTargetValue, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, CAmount& nValueRet, const CCoinControl *coinControl = NULL) const;
+    bool SelectCoins(const CAmount& nTargetValue, std::set<std::pair<const CWalletTx*,unsigned int>, CanonicalInputCompare >& setCoinsRet, CAmount& nValueRet, const CCoinControl *coinControl = NULL) const;
 
     CWalletDB *pwalletdbEncryption;
 
@@ -490,6 +517,8 @@ public:
     typedef std::map<unsigned int, CMasterKey> MasterKeyMap;
     MasterKeyMap mapMasterKeys;
     unsigned int nMasterKeyMaxID;
+
+    typedef std::set<std::pair<const CWalletTx*,unsigned int>, CanonicalInputCompare > OrderedCoinSet;
 
     CWallet()
     {
@@ -543,7 +572,7 @@ public:
     bool CanSupportFeature(enum WalletFeature wf) { AssertLockHeld(cs_wallet); return nWalletMaxVersion >= wf; }
 
     void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true, const CCoinControl *coinControl = NULL, bool fIncludeZeroValue=false) const;
-    bool SelectCoinsMinConf(const CAmount& nTargetValue, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, CAmount& nValueRet) const;
+    bool SelectCoinsMinConf(const CAmount& nTargetValue, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, OrderedCoinSet & setCoinsRet, CAmount& nValueRet) const;
 
     bool IsSpent(const uint256& hash, unsigned int n) const;
 

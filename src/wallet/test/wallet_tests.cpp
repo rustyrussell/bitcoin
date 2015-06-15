@@ -23,8 +23,6 @@
 
 using namespace std;
 
-typedef set<pair<const CWalletTx*,unsigned int> > CoinSet;
-
 BOOST_FIXTURE_TEST_SUITE(wallet_tests, TestingSetup)
 
 static CWallet wallet;
@@ -59,15 +57,15 @@ static void empty_wallet(void)
     vCoins.clear();
 }
 
-static bool equal_sets(CoinSet a, CoinSet b)
+static bool equal_sets(CWallet::OrderedCoinSet a, CWallet::OrderedCoinSet b)
 {
-    pair<CoinSet::iterator, CoinSet::iterator> ret = mismatch(a.begin(), a.end(), b.begin());
+    pair<CWallet::OrderedCoinSet::iterator, CWallet::OrderedCoinSet::iterator> ret = mismatch(a.begin(), a.end(), b.begin());
     return ret.first == a.end() && ret.second == b.end();
 }
 
 BOOST_AUTO_TEST_CASE(coin_selection_tests)
 {
-    CoinSet setCoinsRet, setCoinsRet2;
+    CWallet::OrderedCoinSet setCoinsRet, setCoinsRet2;
     CAmount nValueRet;
 
     LOCK(wallet.cs_wallet);
