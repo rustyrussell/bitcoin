@@ -7,13 +7,26 @@
 #include "chain.h"
 
 /**
+ * BIPState encapsulates the BIP activation parameters for a given chain. 
+ */
+struct BIPState
+{
+    BIPState(unsigned int threshold, unsigned int period)
+        : nThreshold(threshold), nPeriod(period) {}
+
+    unsigned int nThreshold; //!< Versionbits set for lockin
+    unsigned int nPeriod;    //!< How often to examine versionbits
+};
+
+/**
  * BIP gives you a handle for a BIP.  Its only purpose is to allow you
  * to query whether it applies to a given block.
  */
 struct BIP
 {
     // Is this BIP active for this block?
-    virtual bool IsActive(const CBlockIndex* pblockIndex) const = 0;
+    virtual bool IsActive(const CBlockIndex* pblockIndex,
+                          const BIPState& state) const = 0;
 };
 
 /**
@@ -29,7 +42,8 @@ struct VersionBitsBIP : public BIP
                    const VersionBitsBIP*** override_table = NULL);
 
     // Is this BIP active for this block?
-    virtual bool IsActive(const CBlockIndex* pblockIndex) const;
+    virtual bool IsActive(const CBlockIndex* pblockIndex,
+                          const BIPState& state) const;
 
     int64_t nTimeout;            //!< Timeout in seconds since epoch
     unsigned int nBit;           //!< Which version bit, derived from table
@@ -41,7 +55,7 @@ struct VersionBitsBIP : public BIP
  */
 struct BIPStatus
 {
-    BIPStatus(const CBlockIndex* pblockIndex);
+    BIPStatus(const CBlockIndex* pblockIndex, const BIPState& state);
 
     // Two exclusive sets (active could include non-versionbits)
     std::set<const BIP*> active;
@@ -70,6 +84,7 @@ private:
  * VersionForNextBlock:  As a miner, what should nVersion be for next block?
  * @param[in] pblockIndex: the block you're building on top of.
  */
-int VersionForNextBlock(const CBlockIndex* pblockIndex);
+int VersionForNextBlock(const CBlockIndex* pblockIndex,
+                        const BIPState& state);
 
 #endif // BITCOIN_SOFTFORK_H

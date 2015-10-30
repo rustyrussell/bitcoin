@@ -3,7 +3,6 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <vector>
 #include <stdexcept>
-#include "chainparams.h"
 #include "softfork.h"
 #include "utiltime.h"
 #include "util.h"
@@ -68,20 +67,17 @@ static int64_t TimeoutToSeconds(unsigned int year)
 }
 
 // Is this block at end of a period?
-static bool AtEndOfPeriod(unsigned int nHeight)
+static bool AtEndOfPeriod(unsigned int height, unsigned int period)
 {
-    const unsigned int period = Params().GetConsensus().DifficultyAdjustmentInterval();
-    return nHeight % period == period - 1;
+    return height % period == period - 1;
 }
 
 // FIXME:C++11, std::array please!
 // Return version bits counts for period (of which, pblockIndex is last)
 static std::vector<unsigned int>
-TallyVersionBits(const CBlockIndex* pblockIndex)
+TallyVersionBits(const CBlockIndex* pblockIndex, unsigned int period)
 {
-    const unsigned int period = Params().GetConsensus().DifficultyAdjustmentInterval();
-
-    assert(AtEndOfPeriod(pblockIndex->nHeight));
+    assert(AtEndOfPeriod(pblockIndex->nHeight, period));
 
     std::vector<unsigned int> counts(VersionBitsBIP::NUM_VERSION_BITS);
     for (unsigned int i = 0; i < period; i++) {
@@ -145,31 +141,29 @@ void BIPStatus::LockInBIP(const VersionBitsBIP* bip)
         throw std::logic_error("BIP locked in twice?");
 }
 
-BIPStatus::BIPStatus(const CBlockIndex* pblockIndex)
+BIPStatus::BIPStatus(const CBlockIndex* pblockIndex, const BIPState& state)
     : pending(std::vector<const VersionBitsBIP*>(VersionBitsBIP::NUM_VERSION_BITS))
 {
-    const int period = Params().GetConsensus().DifficultyAdjustmentInterval();
-
     // Before end of first period, set up pending to first bit users.
-    if (!pblockIndex || pblockIndex->nHeight < period - 1) {
+    if (!pblockIndex || pblockIndex->nHeight < (int)state.nPeriod - 1) {
         for (unsigned int b = 0; b < VersionBitsBIP::NUM_VERSION_BITS; ++b)
             pending[b] = bip_table[b][0];
         return;
     }
 
     // We only change state on period boundaries, so get end of last period.
-    if (!AtEndOfPeriod(pblockIndex->nHeight)) {
-        int past_adjust = pblockIndex->nHeight % period;
+    if (!AtEndOfPeriod(pblockIndex->nHeight, state.nPeriod)) {
+        int past_adjust = pblockIndex->nHeight % state.nPeriod;
         pblockIndex = pblockIndex->GetAncestor(pblockIndex->nHeight - past_adjust - 1);
     }
 
-    assert(AtEndOfPeriod(pblockIndex->nHeight));
+    assert(AtEndOfPeriod(pblockIndex->nHeight, state.nPeriod));
 
     // Use block from one period ago as a base.
-    *this = BIPStatus(pblockIndex->GetAncestor(pblockIndex->nHeight - period));
+    *this = BIPStatus(pblockIndex->GetAncestor(pblockIndex->nHeight - state.nPeriod), state);
 
     // Look for lockins (consensus reached).
-    std::vector<unsigned int> counts = TallyVersionBits(pblockIndex);
+    std::vector<unsigned int> counts = TallyVersionBits(pblockIndex, state.nPeriod);
 
     // Time for this block.
     int64_t now = pblockIndex->GetMedianTimePast();
@@ -178,7 +172,7 @@ BIPStatus::BIPStatus(const CBlockIndex* pblockIndex)
         // Locked in.  Figure out current BIP for that bit.
         const VersionBitsBIP* bip = pending[b];
 
-        bool success = (counts[b] >= Params().GetConsensus().nVersionBitsLockinThreshold);
+        bool success = (counts[b] >= state.nThreshold);
 
         // Unknown BIP?
         if (!bip) {
@@ -233,22 +227,23 @@ VersionBitsBIP::VersionBitsBIP(int year,
     throw std::logic_error("BIP is not in the version_bits_table");
 }
 
-bool VersionBitsBIP::IsActive(const CBlockIndex* pblockIndex) const
+bool VersionBitsBIP::IsActive(const CBlockIndex* pblockIndex,
+                              const BIPState& state) const
 {
     // Get status for all the BIPs for this block.
-    BIPStatus status(pblockIndex);
+    BIPStatus status(pblockIndex, state);
 
     // Are we in the active set?
     return status.active.find(this) != status.active.end();
 }
 
-int VersionForNextBlock(const CBlockIndex* pblockIndex)
+int VersionForNextBlock(const CBlockIndex* pblockIndex, const BIPState& state)
 {
     // BIP 009:
     //   The highest 3 bits are set to 001
     uint32_t bits = (1U << 29);
 
-    BIPStatus status(pblockIndex);
+    BIPStatus status(pblockIndex, state);
 
     // BIP009:
     //  Software which supports the change should begin by setting B
