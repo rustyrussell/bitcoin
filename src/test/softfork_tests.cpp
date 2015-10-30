@@ -328,6 +328,9 @@ BOOST_AUTO_TEST_CASE(softfork_lockin_before_timeout)
 // Alert when an unknown BIP gets locked-in.
 BOOST_AUTO_TEST_CASE(softfork_unknown_locked_in)
 {
+    // Make UpdateTip etc use the same modified threshold and period
+    bipState = &state;
+
     // Bit 2.
     for (unsigned int i = 1; i < state.nPeriod-1; i++)
         GenBlock(1446063300+i, 0x20000000 | (1<<2));
@@ -340,8 +343,6 @@ BOOST_AUTO_TEST_CASE(softfork_unknown_locked_in)
 
     try {
         GenBlock(1446063300+state.nPeriod, 0x20000000 | (1<<2));
-        // Until we hook in BIPStatus to the core, we need to call this manually.
-        BIPStatus status(chainActive.Tip(), state);
     } catch (std::runtime_error &e) {
         caught = true;
 
@@ -358,19 +359,17 @@ BOOST_AUTO_TEST_CASE(softfork_unknown_locked_in)
 // Alert when an unknown BIP gets activated.
 BOOST_AUTO_TEST_CASE(softfork_unknown_activated)
 {
+    // Make UpdateTip etc use the same modified threshold and period
+    bipState = &state;
+
     // Bit 2, locked in and almost activated.
     for (unsigned int i = 1; i < state.nPeriod * 2 - 1; i++)
         GenBlock(1446063300+i, 0x20000000 | (1<<2));
-
-    // Until we hook in BIPStatus to the core, we need to call this manually.
-    BIPStatus status(chainActive.Tip(), state);
 
     bool caught = false;
     notifyThrowAlerts = true;
     try {
         GenBlock(1446063300+state.nPeriod*2-1, 0x20000000 | (1<<2));
-        // Until we hook in BIPStatus to the core, we need to call this manually.
-        BIPStatus status(chainActive.Tip(), state);
     } catch (std::runtime_error &e) {
         caught = true;
 

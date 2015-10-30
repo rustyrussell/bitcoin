@@ -24,6 +24,7 @@
 #include "script/script.h"
 #include "script/sigcache.h"
 #include "script/standard.h"
+#include "softfork.h"
 #include "tinyformat.h"
 #include "txdb.h"
 #include "txmempool.h"
@@ -73,6 +74,7 @@ bool fCheckpointsEnabled = true;
 size_t nCoinCacheUsage = 5000 * 300;
 uint64_t nPruneTarget = 0;
 bool fAlerts = DEFAULT_ALERTS;
+BIPState *bipState;
 
 /** Fees smaller than this (in satoshi) are considered zero fee (for relaying and mining) */
 CFeeRate minRelayTxFee = CFeeRate(1000);
@@ -2037,6 +2039,9 @@ void static UpdateTip(CBlockIndex *pindexNew) {
       DateTimeStrFormat("%Y-%m-%d %H:%M:%S", chainActive.Tip()->GetBlockTime()),
       Checkpoints::GuessVerificationProgress(chainParams.Checkpoints(), chainActive.Tip()), pcoinsTip->DynamicMemoryUsage() * (1.0 / (1<<20)), pcoinsTip->GetCacheSize());
 
+    // Make sure we report any unknown versionbits changes.
+    BIPStatus(chainActive.Tip(), *bipState);
+
     cvBlockChange.notify_all();
 }
 
@@ -3351,6 +3356,9 @@ bool InitBlockIndex() {
     // Check whether we're already initialized
     if (chainActive.Genesis() != NULL)
         return true;
+
+    bipState = new BIPState(Params().GetConsensus().nVersionBitsLockinThreshold,
+                            Params().GetConsensus().DifficultyAdjustmentInterval());
 
     // Use the provided setting for -txindex in the new database
     fTxIndex = GetBoolArg("-txindex", false);
