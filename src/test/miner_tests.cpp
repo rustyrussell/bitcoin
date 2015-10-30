@@ -10,6 +10,7 @@
 #include "miner.h"
 #include "pubkey.h"
 #include "script/standard.h"
+#include "softfork.h"
 #include "txmempool.h"
 #include "uint256.h"
 #include "util.h"
@@ -70,6 +71,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 
     // Simple block creation, nothing special yet:
     BOOST_CHECK(pblocktemplate = CreateNewBlock(scriptPubKey));
+
+    BOOST_CHECK(pblocktemplate->block.nVersion == VersionForNextBlock(chainActive.Tip(), *bipState));
 
     // We can't make transactions until we have inputs
     // Therefore, load 100 blocks :)

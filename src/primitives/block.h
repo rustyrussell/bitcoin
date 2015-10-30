@@ -21,7 +21,6 @@ class CBlockHeader
 {
 public:
     // header
-    static const int32_t CURRENT_VERSION=4;
     int32_t nVersion;
     uint256 hashPrevBlock;
     uint256 hashMerkleRoot;
@@ -49,7 +48,8 @@ public:
 
     void SetNull()
     {
-        nVersion = CBlockHeader::CURRENT_VERSION;
+        // BIP 009: Versionbits with no bits set.    
+        nVersion = (1 << 29);
         hashPrevBlock.SetNull();
         hashMerkleRoot.SetNull();
         nTime = 0;

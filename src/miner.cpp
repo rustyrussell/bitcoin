@@ -18,6 +18,7 @@
 #include "pow.h"
 #include "primitives/transaction.h"
 #include "script/standard.h"
+#include "softfork.h"
 #include "timedata.h"
 #include "txmempool.h"
 #include "util.h"
@@ -108,11 +109,6 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
         return NULL;
     CBlock *pblock = &pblocktemplate->block; // pointer for convenience
 
-    // -regtest only: allow overriding block.nVersion with
-    // -blockversion=N to test forking scenarios
-    if (Params().MineBlocksOnDemand())
-        pblock->nVersion = GetArg("-blockversion", pblock->nVersion);
-
     // Create coinbase tx
     CMutableTransaction txNew;
     txNew.vin.resize(1);
@@ -148,6 +144,13 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
         CBlockIndex* pindexPrev = chainActive.Tip();
         const int nHeight = pindexPrev->nHeight + 1;
         pblock->nTime = GetAdjustedTime();
+
+        pblock->nVersion = VersionForNextBlock(pindexPrev, *bipState);
+        // -regtest only: allow overriding block.nVersion with
+        // -blockversion=N to test forking scenarios
+        if (Params().MineBlocksOnDemand())
+            pblock->nVersion = GetArg("-blockversion", pblock->nVersion);
+
         const int64_t nMedianTimePast = pindexPrev->GetMedianTimePast();
         CCoinsViewCache view(pcoinsTip);
 
