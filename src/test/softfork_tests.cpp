@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "alert.h"
 #include "chain.h"
 #include "chainparams.h"
 #include "main.h"
@@ -324,8 +325,62 @@ BOOST_AUTO_TEST_CASE(softfork_lockin_before_timeout)
                 (0x20000000 | (1<<0) | (1<<28)));
 }
 
+// Alert when an unknown BIP gets locked-in.
+BOOST_AUTO_TEST_CASE(softfork_unknown_locked_in)
+{
+    // Bit 2.
+    for (unsigned int i = 1; i < state.nPeriod-1; i++)
+        GenBlock(1446063300+i, 0x20000000 | (1<<2));
+
+    bool caught = false;
+    notifyThrowAlerts = true;
+
+    // This should *not* throw.
+    BIPStatus status(chainActive.Tip(), state);
+
+    try {
+        GenBlock(1446063300+state.nPeriod, 0x20000000 | (1<<2));
+        // Until we hook in BIPStatus to the core, we need to call this manually.
+        BIPStatus status(chainActive.Tip(), state);
+    } catch (std::runtime_error &e) {
+        caught = true;
+
+        std::string time = DateTimeStrFormat("%Y-%m-%d %H:%M:%S",
+                                             1446063300+state.nPeriod);
+        std::string warn = strprintf(_("WARNING: at %s block %d locked in an unknown upgrade %d: update your software before block %u activates it!"),
+                                     time.c_str(), state.nPeriod-1, 2, state.nPeriod-1+state.nPeriod);
+        BOOST_CHECK_EQUAL(e.what(), warn);
+    }
+    BOOST_CHECK(caught);
+    notifyThrowAlerts = false;
+}
+
+// Alert when an unknown BIP gets activated.
+BOOST_AUTO_TEST_CASE(softfork_unknown_activated)
+{
+    // Bit 2, locked in and almost activated.
+    for (unsigned int i = 1; i < state.nPeriod * 2 - 1; i++)
+        GenBlock(1446063300+i, 0x20000000 | (1<<2));
+
+    // Until we hook in BIPStatus to the core, we need to call this manually.
+    BIPStatus status(chainActive.Tip(), state);
+
+    bool caught = false;
+    notifyThrowAlerts = true;
+    try {
+        GenBlock(1446063300+state.nPeriod*2-1, 0x20000000 | (1<<2));
+        // Until we hook in BIPStatus to the core, we need to call this manually.
+        BIPStatus status(chainActive.Tip(), state);
+    } catch (std::runtime_error &e) {
+        caught = true;
+
+        BOOST_CHECK_EQUAL(e.what(), _("Warning: This version is obsolete; upgrade required!"));
+    }
+    BOOST_CHECK(caught);
+    notifyThrowAlerts = false;
+}
+
 // FIXME: Test two activations at once
 // FIXME: Test one timeout one activation
-// FIXME: Test alerts
 
 BOOST_AUTO_TEST_SUITE_END()
