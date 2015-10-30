@@ -26,6 +26,7 @@ using namespace std;
 
 map<uint256, CAlert> mapAlerts;
 CCriticalSection cs_mapAlerts;
+bool notifyThrowAlerts;
 
 void CUnsignedAlert::SetNull()
 {
@@ -248,6 +249,10 @@ bool CAlert::ProcessAlert(const std::vector<unsigned char>& alertKey, bool fThre
 void
 CAlert::Notify(const std::string& strMessage, bool fThread)
 {
+    // Good for unit tests.
+    if (notifyThrowAlerts)
+        throw runtime_error(strMessage.c_str());
+
     std::string strCmd = GetArg("-alertnotify", "");
     if (strCmd.empty()) return;
 
