@@ -66,6 +66,9 @@ struct BIPStatus
     // FIXME: C++11 std::array!
     std::vector<const VersionBitsBIP*> pending;
 
+    // If non-zero, the min height at which we activate an unknown fork.
+    unsigned int unknown_activation;
+
     // Activate a locked-in bip (happens 1 period after activation).
     void ActivateBIP(const VersionBitsBIP* bip);
 

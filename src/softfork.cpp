@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <vector>
 #include <stdexcept>
+#include "alert.h"
 #include "softfork.h"
 #include "utiltime.h"
 #include "util.h"
@@ -142,7 +143,8 @@ void BIPStatus::LockInBIP(const VersionBitsBIP* bip)
 }
 
 BIPStatus::BIPStatus(const CBlockIndex* pblockIndex, const BIPState& state)
-    : pending(std::vector<const VersionBitsBIP*>(VersionBitsBIP::NUM_VERSION_BITS))
+    : pending(std::vector<const VersionBitsBIP*>(VersionBitsBIP::NUM_VERSION_BITS)),
+      unknown_activation(0)
 {
     // Before end of first period, set up pending to first bit users.
     if (!pblockIndex || pblockIndex->nHeight < (int)state.nPeriod - 1) {
@@ -176,6 +178,32 @@ BIPStatus::BIPStatus(const CBlockIndex* pblockIndex, const BIPState& state)
 
         // Unknown BIP?
         if (!bip) {
+            // Only warn if something's happening.
+            if (!success)
+                continue;
+
+            // BIP 009:
+            //  Whenever lock-in for the unknown upgrade is detected,
+            //  the software should warn loudly about the upcoming
+            //  soft fork.
+            static bool fWarned = false;
+            unsigned int activate_height = pblockIndex->nHeight + state.nPeriod;
+            if (!fWarned) {
+                std::string time = DateTimeStrFormat("%Y-%m-%d %H:%M:%S",
+                                                     pblockIndex->nTime);
+
+                CAlert::Notify(strprintf(_("WARNING: at %s block %d locked in an unknown upgrade %d: update your software before block %u activates it!"),
+                                         time.c_str(),
+                                         pblockIndex->nHeight,
+                                         b,
+                                         activate_height),
+                               true);
+                fWarned = true;
+            }
+
+            if (unknown_activation == 0 || activate_height < unknown_activation)
+                unknown_activation = activate_height;
+
             continue;
         }
 
@@ -200,6 +228,17 @@ BIPStatus::BIPStatus(const CBlockIndex* pblockIndex, const BIPState& state)
         }
 
         // BIP is still waiting to be activated.
+    }
+
+    // BIP 009:
+    //   It should warn even more loudly after the next retarget period.
+    static bool fWarned = false;
+    if (unknown_activation &&
+        (unsigned)pblockIndex->nHeight >= unknown_activation && !fWarned) {
+        // Same message as if transaction versions increase.
+        std::string warning = _("Warning: This version is obsolete; upgrade required!");
+        CAlert::Notify(warning, true);
+        fWarned = true;
     }
 }
 
