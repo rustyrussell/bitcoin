@@ -6,6 +6,8 @@
 #define BITCOIN_SOFTFORK_H
 #include "chain.h"
 
+struct BIPStatus;
+
 /**
  * BIPState encapsulates the BIP activation parameters for a given chain. 
  */
@@ -16,6 +18,8 @@ struct BIPState
 
     unsigned int nThreshold; //!< Versionbits set for lockin
     unsigned int nPeriod;    //!< How often to examine versionbits
+
+    mutable std::map<const CBlockIndex*, BIPStatus*> cache; //!< Speed up.
 };
 
 /**

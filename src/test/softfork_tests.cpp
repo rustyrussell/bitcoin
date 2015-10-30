@@ -380,6 +380,39 @@ BOOST_AUTO_TEST_CASE(softfork_unknown_activated)
     notifyThrowAlerts = false;
 }
 
+// Alert when an unknown BIP gets activated.
+BOOST_AUTO_TEST_CASE(softfork_cache)
+{
+    int64_t time = 1446063300;
+
+    // Cut period even further, since GenBlock is so slow.
+    state.nPeriod = 5;
+    state.nThreshold = 4;
+    
+    // Test0 is locked in..
+    for (unsigned int i = 1; i < state.nPeriod; i++)
+        GenBlock(time++, 0x20000000 | (1<<0));
+
+    // Activate, add many periods.
+    for (unsigned int period = 0; period < 100; period++)
+        for (unsigned int i = 0; i < state.nPeriod; i++)
+            GenBlock(time++, 0x20000000);
+
+    BOOST_CHECK(BIP_Test0.IsActive(chainActive.Tip(), state));
+    BOOST_CHECK(!BIP_Test1.IsActive(chainActive.Tip(), state));
+    BOOST_CHECK(!BIP_Test0_next.IsActive(chainActive.Tip(), state));
+    BOOST_CHECK(!BIP_Test28.IsActive(chainActive.Tip(), state));
+
+    BOOST_CHECK(state.cache.find(chainActive.Tip()) != state.cache.end());
+    
+#if 0 // Timing test.
+    size_t counts = 0;
+    for (unsigned int i = 0; i < 100000; i++)
+        counts += BIP_Test0.IsActive(chainActive.Tip(), state);
+    BOOST_CHECK(counts == 100000);
+#endif
+}
+
 // FIXME: Test two activations at once
 // FIXME: Test one timeout one activation
 

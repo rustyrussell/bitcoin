@@ -161,6 +161,14 @@ BIPStatus::BIPStatus(const CBlockIndex* pblockIndex, const BIPState& state)
 
     assert(AtEndOfPeriod(pblockIndex->nHeight, state.nPeriod));
 
+    // Pointers are constant for us, so this works.
+    std::map<const CBlockIndex*, BIPStatus*>::iterator it;
+    it = state.cache.find(pblockIndex);
+    if (it != state.cache.end()) {
+        *this = *it->second;
+        return;
+    }
+
     // Use block from one period ago as a base.
     *this = BIPStatus(pblockIndex->GetAncestor(pblockIndex->nHeight - state.nPeriod), state);
 
@@ -240,6 +248,11 @@ BIPStatus::BIPStatus(const CBlockIndex* pblockIndex, const BIPState& state)
         CAlert::Notify(warning, true);
         fWarned = true;
     }
+
+    // We never trim the cache, since it grows by one entry every 2 weeks.
+    // But we could, trivially.
+    state.cache.insert(std::pair<const CBlockIndex*, BIPStatus*>(pblockIndex,
+                                                                 new BIPStatus(*this)));
 }
 
 // The table is canonical, and nicely visual.  We derive our position on
