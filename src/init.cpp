@@ -26,6 +26,7 @@
 #include "rpcserver.h"
 #include "script/standard.h"
 #include "scheduler.h"
+#include "softfork.h"
 #include "txdb.h"
 #include "txmempool.h"
 #include "ui_interface.h"
@@ -1019,6 +1020,11 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     // Start the lightweight task scheduler thread
     CScheduler::Function serviceLoop = boost::bind(&CScheduler::serviceQueue, &scheduler);
     threadGroup.create_thread(boost::bind(&TraceThread<CScheduler::Function>, "scheduler", serviceLoop));
+
+    // Initialize bip state for this chain.
+    bipState = new BIPState(Params().GetConsensus().nVersionBitsLockinThreshold,
+                            Params().GetConsensus().DifficultyAdjustmentInterval(),
+                            NormalChainBIPS);
 
     /* Start the RPC server already.  It will be started in "warmup" mode
      * and not really process calls already (but it will signify connections

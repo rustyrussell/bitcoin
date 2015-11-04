@@ -8,47 +8,13 @@
 #include "utiltime.h"
 #include "util.h"
 
-// Append new BIPs to the appropriate array, before the NULL terminator.
-static const VersionBitsBIP
-    *bit00[] = { NULL },
-    *bit01[] = { NULL },
-    *bit02[] = { NULL },
-    *bit03[] = { NULL },
-    *bit04[] = { NULL },
-    *bit05[] = { NULL },
-    *bit06[] = { NULL },
-    *bit07[] = { NULL },
-    *bit08[] = { NULL },
-    *bit09[] = { NULL },
-    *bit10[] = { NULL },
-    *bit11[] = { NULL },
-    *bit12[] = { NULL },
-    *bit13[] = { NULL },
-    *bit14[] = { NULL },
-    *bit15[] = { NULL },
-    *bit16[] = { NULL },
-    *bit17[] = { NULL },
-    *bit18[] = { NULL },
-    *bit19[] = { NULL },
-    *bit20[] = { NULL },
-    *bit21[] = { NULL },
-    *bit22[] = { NULL },
-    *bit23[] = { NULL },
-    *bit24[] = { NULL },
-    *bit25[] = { NULL },
-    *bit26[] = { NULL },
-    *bit27[] = { NULL },
-    *bit28[] = { NULL };
+// From BIP 009:
+//   The highest 3 bits are set to 001, so the range of actually
+//   possible nVersion values is [0x20000000...0x3FFFFFFF], inclusive.
+#define NUM_VERSION_BITS 29
 
-// We keep them in separate variables so they can be different lengths.
-static const VersionBitsBIP **version_bits_table[VersionBitsBIP::NUM_VERSION_BITS] = {
-    bit00, bit01, bit02, bit03, bit04, bit05, bit06, bit07, bit08, bit09,
-    bit10, bit11, bit12, bit13, bit14, bit15, bit16, bit17, bit18, bit19,
-    bit20, bit21, bit22, bit23, bit24, bit25, bit26, bit27, bit28
-};
-
-// A pointer, for testing to override.
-static const VersionBitsBIP*** bip_table = version_bits_table;
+// This constant is large enough to cover tests, too. 
+#define MAX_BIPS 16
 
 // From BIP 009, 2018 onwards
 static const unsigned int TIMEOUT_YEAR_BASE = 2018;
@@ -58,13 +24,89 @@ static const unsigned int year_timemap[] = {
     1893456000, 1924992000, 1956528000, 1988150400 /* 2033 */
 };
 
-static int64_t TimeoutToSeconds(unsigned int year)
+static int64_t YearToSeconds(unsigned int year)
 {
     if (year < TIMEOUT_YEAR_BASE)
         throw std::domain_error("Year below base");
     if (year > TIMEOUT_YEAR_BASE + sizeof(year_timemap)/sizeof(year_timemap[0]))
         throw std::domain_error("Year beyond table end");
     return year_timemap[year - TIMEOUT_YEAR_BASE];
+}
+
+// The activation rules for a particular VersionBitsBIP
+struct VersionBitsBIPActivation
+{
+    const struct VersionBitsBIP *pBIP;
+    unsigned int nBit;
+    int64_t nTimeout;
+
+    VersionBitsBIPActivation(const struct VersionBitsBIP &bip,
+                             unsigned int bit,
+                             unsigned int expiry_year)
+        : pBIP(&bip), nBit(bit), nTimeout(YearToSeconds(expiry_year)) {
+        assert(bit < NUM_VERSION_BITS);
+    }
+
+    // If a BIP never applies to this chain.
+    enum never { NEVER };
+    VersionBitsBIPActivation(const struct VersionBitsBIP &bip, enum never n)
+        : pBIP(&bip), nBit(NUM_VERSION_BITS), nTimeout(0) { }
+    
+    // Default creates end marker. 
+    VersionBitsBIPActivation()
+        : pBIP(NULL) { }
+
+    bool IsEnd() const { return pBIP == NULL; }
+};
+
+enum bip_index {
+    BIP_TEST1,
+    BIP_TEST2
+};
+
+VersionBitsBIP BIP_Test1(BIP_TEST1);
+VersionBitsBIP BIP_Test2(BIP_TEST2);
+
+// Currently same BIPs are used for test and main chains, but could be
+// different in theory (or for testing).
+const VersionBitsBIPActivation NormalChainBIPS[] = {
+    // Insert new bips here in id order!
+    VersionBitsBIPActivation(BIP_Test1, 0, 2018),
+    VersionBitsBIPActivation(BIP_Test2, 1, 2019),
+
+    // Explicit terminator
+    VersionBitsBIPActivation()
+};
+
+// Just check table is correct.
+void BIPState::CheckBIPTable(const VersionBitsBIPActivation *activations)
+{
+    for (size_t i = 0; i < MAX_BIPS; i++) {
+        if (activations[i].IsEnd())
+            return;
+        if (activations[i].pBIP->id != i)
+            throw std::logic_error("BIP activation table out of order");
+        if (activations[i].nBit == NUM_VERSION_BITS) {
+            if (activations[i].nTimeout != 0) {
+                throw std::logic_error("BIP activation table invalid never bip");
+            }
+        } else if (activations[i].nBit > NUM_VERSION_BITS) {
+            throw std::logic_error("BIP activation table invalid bip bit");
+        }
+    }
+    throw std::logic_error("BIP activation table missing terminator");
+}
+
+static unsigned int NextActivationIndex(unsigned int bit,
+                                        unsigned int i,
+                                        const VersionBitsBIPActivation *arr)
+{
+    while (!arr[i].IsEnd()) {
+        if (arr[i].nBit == bit)
+            break;
+        i++;
+    }
+    return i;
 }
 
 // Is this block at end of a period?
@@ -80,14 +122,14 @@ TallyVersionBits(const CBlockIndex* pblockIndex, unsigned int period)
 {
     assert(AtEndOfPeriod(pblockIndex->nHeight, period));
 
-    std::vector<unsigned int> counts(VersionBitsBIP::NUM_VERSION_BITS);
+    std::vector<unsigned int> counts(NUM_VERSION_BITS);
     for (unsigned int i = 0; i < period; i++) {
         // Is it a valid versionbits header?  Top three bits 001.
         if ((pblockIndex->nVersion >> 29) != 0x1)
             continue;
 
         // Add up all the bits.
-        for (unsigned int b = 0; b < VersionBitsBIP::NUM_VERSION_BITS; b++)
+        for (unsigned int b = 0; b < NUM_VERSION_BITS; b++)
             if ((pblockIndex->nVersion >> b) & 1)
                 counts[b]++;
 
@@ -98,58 +140,102 @@ TallyVersionBits(const CBlockIndex* pblockIndex, unsigned int period)
     return counts;
 }
 
-void BIPStatus::BIPConcluded(const VersionBitsBIP* bip)
+/**
+ * Status of all BIPs for a given block.
+ *
+ * The indices correspond to the position in state->pActivations.
+ */
+struct BIPStatus
 {
-    assert(pending[bip->nBit] == bip);
-    pending[bip->nBit] = bip->pNext;
+    BIPStatus(const CBlockIndex* pblockIndex, const BIPState& astate);
+
+    enum OneState {
+        // Not yet considered.
+        UNKNOWN,
+        PENDING,
+        LOCKED_IN,
+        ACTIVE,
+        TIMEDOUT
+    };
+    // State of every BIP, by unique index.
+    enum OneState bips[MAX_BIPS];
+
+    // Indices into bips[] for each versionbits bit.
+    unsigned int pending[NUM_VERSION_BITS];
+
+    // If non-zero, the min height at which we activate an unknown fork.
+    unsigned int unknown_activation;
+
+    // Activate a locked-in bip (happens 1 period after activation).
+    void ActivateBIP(unsigned int index, const BIPState& state);
+
+    // Time out any active bips which are past their date.
+    void TimeoutBIP(unsigned int index, const BIPState& state);
+
+    // Lock in a BIP which has reached consensus.
+    void LockInBIP(unsigned int index);
+
+private:
+    // Update to next pending bip.
+    void BIPConcluded(unsigned int index, const BIPState& state);
+};
+
+void BIPStatus::BIPConcluded(unsigned int index, const BIPState& state)
+{
+    // This bip must be ACTIVE or TIMEDOUT.
+    assert(index < MAX_BIPS);
+    assert(bips[index] == ACTIVE || bips[index] == TIMEDOUT);
+
+    unsigned bit = state.pActivations[index].nBit;
+    // Pending index for this bit must be correct.
+    assert(pending[bit] == index);
+
+    // Find next user for this bit, if any.
+    pending[bit] = NextActivationIndex(bit, index+1, state.pActivations);
 }
 
-void BIPStatus::ActivateBIP(const VersionBitsBIP* bip)
+void BIPStatus::ActivateBIP(unsigned int index, const BIPState& state)
 {
-    // Can't activate twice.
-    assert(active.find(bip) == active.end());
-
     // Must be locked in.
-    if (locked_in.erase(bip) != 1)
-        throw std::logic_error("BIP not locked in?");
-
-    active.insert(bip);
+    assert(bips[index] == LOCKED_IN);
+    bips[index] = ACTIVE;
 
     // BIP 009:
     //   At the that activation block and after, miners should stop
     //   setting bit B, which may be reused for a different soft fork.
-    BIPConcluded(bip);
+    BIPConcluded(index, state);
 }
 
 // Time out any active bips which are past their date.
-void BIPStatus::TimeoutBIP(const VersionBitsBIP* bip)
+void BIPStatus::TimeoutBIP(unsigned int index, const BIPState& state)
 {
-    // Can't be activated.
-    assert(active.find(bip) == active.end());
-    // Can't be locked in.
-    assert(locked_in.find(bip) == locked_in.end());
+    // Must be pending in.
+    assert(bips[index] == PENDING);
+    bips[index] = TIMEDOUT;
 
-    BIPConcluded(bip);
+    BIPConcluded(index, state);
 }
 
 // Lock in a BIP which has reached consensus.
-void BIPStatus::LockInBIP(const VersionBitsBIP* bip)
+void BIPStatus::LockInBIP(unsigned int index)
 {
-    // Can't be activated.
-    assert(active.find(bip) == active.end());
-    // Can't be locked in.
-    if (!locked_in.insert(bip).second)
-        throw std::logic_error("BIP locked in twice?");
+    // Must be pending.
+    assert(bips[index] == PENDING);
+    bips[index] = LOCKED_IN;
 }
 
 BIPStatus::BIPStatus(const CBlockIndex* pblockIndex, const BIPState& state)
-    : pending(std::vector<const VersionBitsBIP*>(VersionBitsBIP::NUM_VERSION_BITS)),
-      unknown_activation(0)
+    : unknown_activation(0)
 {
     // Before end of first period, set up pending to first bit users.
     if (!pblockIndex || pblockIndex->nHeight < (int)state.nPeriod - 1) {
-        for (unsigned int b = 0; b < VersionBitsBIP::NUM_VERSION_BITS; ++b)
-            pending[b] = bip_table[b][0];
+        for (unsigned int b = 0; b < NUM_VERSION_BITS; ++b) {
+            pending[b] = NextActivationIndex(b, 0, state.pActivations);
+            if (state.pActivations[pending[b]].IsEnd())
+                bips[pending[b]] = UNKNOWN;
+            else
+                bips[pending[b]] = PENDING;
+        }
         return;
     }
 
@@ -178,17 +264,14 @@ BIPStatus::BIPStatus(const CBlockIndex* pblockIndex, const BIPState& state)
     // Time for this block.
     int64_t now = pblockIndex->GetMedianTimePast();
 
-    for (unsigned int b = 0; b < VersionBitsBIP::NUM_VERSION_BITS; ++b) {
-        // Locked in.  Figure out current BIP for that bit.
-        const VersionBitsBIP* bip = pending[b];
-
+    for (unsigned int b = 0; b < NUM_VERSION_BITS; ++b) {
         bool success = (counts[b] >= state.nThreshold);
 
-        // Unknown BIP?
-        if (!bip) {
+        switch (bips[pending[b]]) {
+        case UNKNOWN: {
             // Only warn if something's happening.
             if (!success)
-                continue;
+                break;
 
             // BIP 009:
             //  Whenever lock-in for the unknown upgrade is detected,
@@ -211,31 +294,37 @@ BIPStatus::BIPStatus(const CBlockIndex* pblockIndex, const BIPState& state)
 
             if (unknown_activation == 0 || activate_height < unknown_activation)
                 unknown_activation = activate_height;
-
-            continue;
         }
+            break;
 
-        // BIP 009:
-        //  The consensus rules related to ''locked-in'' soft fork will
-        //  be enforced in the second retarget period
-        if (find(locked_in.begin(), locked_in.end(), bip) != locked_in.end()) {
-            ActivateBIP(bip);
-            continue;
+        case LOCKED_IN:
+            // BIP 009:
+            //  The consensus rules related to ''locked-in'' soft fork will
+            //  be enforced in the second retarget period
+            ActivateBIP(pending[b], state);
+            break;
+
+        case PENDING:
+            // If we got the numbers, we lock it in now.
+            if (success) {
+                LockInBIP(pending[b]);
+                break;
+            }
+
+            // Otherwise, check for timeout.
+            if (now >= state.pActivations[pending[b]].nTimeout) {
+                TimeoutBIP(pending[b], state);
+                break;
+            }
+
+            // BIP is still waiting to be activated.
+            break;
+
+        case TIMEDOUT:
+            throw std::logic_error("BIP is timed out already?");
+        case ACTIVE:
+            throw std::logic_error("BIP is active already?");
         }
-
-        // If we got the numbers, we lock it in now.
-        if (success) {
-            LockInBIP(bip);
-            continue;
-        }
-
-        // Otherwise, check for timeout.
-        if (now >= bip->nTimeout) {
-            TimeoutBIP(bip);
-            continue;
-        }
-
-        // BIP is still waiting to be activated.
     }
 
     // BIP 009:
@@ -255,38 +344,12 @@ BIPStatus::BIPStatus(const CBlockIndex* pblockIndex, const BIPState& state)
                                                                  new BIPStatus(*this)));
 }
 
-// The table is canonical, and nicely visual.  We derive our position on
-// first usage.
-VersionBitsBIP::VersionBitsBIP(int year,
-                               const VersionBitsBIP*** table)
-    : nTimeout(TimeoutToSeconds(year))
-{
-    if (table)
-        bip_table = table;
-
-    // Find ourselves in the table.
-    for (size_t b = 0; b < NUM_VERSION_BITS; b++) {
-        for (size_t gen = 0; bip_table[b][gen]; gen++) {
-            if (bip_table[b][gen] == this) {
-                nBit = b;
-                pNext = bip_table[b][gen + 1];
-                return;
-            }
-        }
-    }
-
-    // We're not in the table.
-    throw std::logic_error("BIP is not in the version_bits_table");
-}
-
 bool VersionBitsBIP::IsActive(const CBlockIndex* pblockIndex,
                               const BIPState& state) const
 {
     // Get status for all the BIPs for this block.
     BIPStatus status(pblockIndex, state);
-
-    // Are we in the active set?
-    return status.active.find(this) != status.active.end();
+    return status.bips[id] == BIPStatus::ACTIVE;
 }
 
 int VersionForNextBlock(const CBlockIndex* pblockIndex, const BIPState& state)
@@ -300,9 +363,13 @@ int VersionForNextBlock(const CBlockIndex* pblockIndex, const BIPState& state)
     // BIP009:
     //  Software which supports the change should begin by setting B
     //  in all blocks mined until it is resolved.
-    for (unsigned int b = 0; b < VersionBitsBIP::NUM_VERSION_BITS; b++)
-        if (status.pending[b])
+    for (unsigned int b = 0; b < NUM_VERSION_BITS; b++) {
+        if (status.pending[b] == BIPStatus::ACTIVE ||
+            status.pending[b] == BIPStatus::LOCKED_IN) {
             bits |= (1U << b);
+        }
+    }
 
     return bits;
 }
+

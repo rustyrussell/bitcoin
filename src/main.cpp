@@ -2040,7 +2040,7 @@ void static UpdateTip(CBlockIndex *pindexNew) {
       Checkpoints::GuessVerificationProgress(chainParams.Checkpoints(), chainActive.Tip()), pcoinsTip->DynamicMemoryUsage() * (1.0 / (1<<20)), pcoinsTip->GetCacheSize());
 
     // Make sure we report any unknown versionbits changes.
-    BIPStatus(chainActive.Tip(), *bipState);
+    VersionForNextBlock(chainActive.Tip(), *bipState);
 
     cvBlockChange.notify_all();
 }
@@ -3356,9 +3356,6 @@ bool InitBlockIndex() {
     // Check whether we're already initialized
     if (chainActive.Genesis() != NULL)
         return true;
-
-    bipState = new BIPState(Params().GetConsensus().nVersionBitsLockinThreshold,
-                            Params().GetConsensus().DifficultyAdjustmentInterval());
 
     // Use the provided setting for -txindex in the new database
     fTxIndex = GetBoolArg("-txindex", false);
