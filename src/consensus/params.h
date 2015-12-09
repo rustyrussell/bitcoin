@@ -29,6 +29,8 @@ struct Params {
     int64_t nPowTargetSpacing;
     int64_t nPowTargetTimespan;
     int64_t DifficultyAdjustmentInterval() const { return nPowTargetTimespan / nPowTargetSpacing; }
+    unsigned int MaxBlockSize(int height) const { return 1000000; }
+    unsigned int MaxBlockSigOps(int height) const { return MaxBlockSize(height) / 50; }
 };
 } // namespace Consensus
 

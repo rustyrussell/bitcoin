@@ -98,18 +98,16 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const CScript& s
 
     // Largest block you're willing to create:
     unsigned int nBlockMaxSize = GetArg("-blockmaxsize", DEFAULT_BLOCK_MAX_SIZE);
-    // Limit to between 1K and MAX_BLOCK_SIZE-1K for sanity:
-    nBlockMaxSize = std::max((unsigned int)1000, std::min((unsigned int)(MAX_BLOCK_SIZE-1000), nBlockMaxSize));
+    // Lower limit is 1K.
+    nBlockMaxSize = std::max((unsigned int)1000, nBlockMaxSize);
 
     // How much of the block should be dedicated to high-priority transactions,
     // included regardless of the fees they pay
     unsigned int nBlockPrioritySize = GetArg("-blockprioritysize", DEFAULT_BLOCK_PRIORITY_SIZE);
-    nBlockPrioritySize = std::min(nBlockMaxSize, nBlockPrioritySize);
 
     // Minimum block size you want to create; block will be filled with free transactions
     // until there are no more or the block reaches this size:
     unsigned int nBlockMinSize = GetArg("-blockminsize", DEFAULT_BLOCK_MIN_SIZE);
-    nBlockMinSize = std::min(nBlockMaxSize, nBlockMinSize);
 
     // Collect memory pool transactions into the block
     CTxMemPool::setEntries inBlock;
@@ -140,6 +138,13 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const CScript& s
         int64_t nLockTimeCutoff = (STANDARD_LOCKTIME_VERIFY_FLAGS & LOCKTIME_MEDIAN_TIME_PAST)
                                 ? nMedianTimePast
                                 : pblock->GetBlockTime();
+
+        // Upper limit 1K less that max possible.
+        nBlockMaxSize = std::min((unsigned int)(chainparams.GetConsensus().MaxBlockSize(nHeight)-1000),
+                                 nBlockMaxSize);
+        // Restrict others accordingly.
+        nBlockPrioritySize = std::min(nBlockMaxSize, nBlockPrioritySize);
+        nBlockMinSize = std::min(nBlockMaxSize, nBlockMinSize);
 
         bool fPriorityBlock = nBlockPrioritySize > 0;
         if (fPriorityBlock) {
@@ -224,8 +229,8 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const CScript& s
                 continue;
 
             unsigned int nTxSigOps = iter->GetSigOpCount();
-            if (nBlockSigOps + nTxSigOps >= MAX_BLOCK_SIGOPS) {
-                if (nBlockSigOps > MAX_BLOCK_SIGOPS - 2) {
+            if (nBlockSigOps + nTxSigOps >= chainparams.GetConsensus().MaxBlockSigOps(nHeight)) {
+                if (nBlockSigOps > chainparams.GetConsensus().MaxBlockSigOps(nHeight) - 2) {
                     break;
                 }
                 continue;

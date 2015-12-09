@@ -2134,7 +2134,10 @@ void CNode::RecordBytesSent(uint64_t bytes)
 void CNode::SetMaxOutboundTarget(uint64_t limit)
 {
     LOCK(cs_totalBytesSent);
-    uint64_t recommendedMinimum = (nMaxOutboundTimeframe / 600) * MAX_BLOCK_SIZE;
+    // Base recommended minimum on guess of limit in 1 year from now.
+    // Height at T=1449564610 = 387286.  Assume one block every 600 seconds
+    uint64_t heightNextYear = 387286 + (GetTime() - 1449564610) / 600;
+    uint64_t recommendedMinimum = (nMaxOutboundTimeframe / 600) * Params().GetConsensus().MaxBlockSize(heightNextYear);
     nMaxOutboundLimit = limit;
 
     if (limit > 0 && limit < recommendedMinimum)
@@ -2189,7 +2192,7 @@ bool CNode::OutboundTargetReached(bool historicalBlockServingLimit)
     {
         // keep a large enought buffer to at least relay each block once
         uint64_t timeLeftInCycle = GetMaxOutboundTimeLeftInCycle();
-        uint64_t buffer = timeLeftInCycle / 600 * MAX_BLOCK_SIZE;
+        uint64_t buffer = timeLeftInCycle / 600 * MAX_POSSIBLE_BLOCK_SIZE;
         if (buffer >= nMaxOutboundLimit || nMaxOutboundTotalBytesSentInCycle >= nMaxOutboundLimit - buffer)
             return true;
     }
