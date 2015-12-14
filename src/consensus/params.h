@@ -31,7 +31,39 @@ struct Params {
     int64_t nPowTargetSpacing;
     int64_t nPowTargetTimespan;
     int64_t DifficultyAdjustmentInterval() const { return nPowTargetTimespan / nPowTargetSpacing; }
-    unsigned int MaxBlockSize(int height) const { return 1000000; }
+    unsigned int MaxBlockSize(int height) const {
+	unsigned int base = 1000000;
+
+	// Not activated, or never activating.
+	if (BIPBackHeight < 0 || height < BIPBackHeight)
+	    return base;
+
+	// Note: 37 blocks in a "year" for regtest
+	const unsigned int year_of_blocks = nSubsidyHalvingInterval / 4;
+
+	// Linear ramp to 2MB in first year 
+	unsigned int t = height - BIPBackHeight;
+	unsigned int extra_target = 1000000;
+	if (t < year_of_blocks)
+	    return base + extra_target * t / year_of_blocks;
+
+	// A linear ramp to 4MB in next 2 years
+	base += extra_target;
+	t -= year_of_blocks;
+	extra_target = 2000000;
+	if (t < year_of_blocks * 2)
+	    return base + extra_target * t / (year_of_blocks * 2);
+
+	// Then a linear ramp to 8MB in next 2 years.
+	base += 2000000;
+	t -= year_of_blocks * 2;
+	if (t < year_of_blocks * 2)
+	    return base + 4000000 * t / (year_of_blocks * 2);
+
+	// Max out at 8MB
+	base += 4000000;
+	return base;
+    }
     unsigned int MaxBlockSigOps(int height) const { return MaxBlockSize(height) / 50; }
 };
 } // namespace Consensus
