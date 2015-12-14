@@ -7,7 +7,7 @@
 #define BITCOIN_CONSENSUS_CONSENSUS_H
 
 /** The maximum ever allowed size for a serialized block, in bytes (network rule) */
-static const unsigned int MAX_POSSIBLE_BLOCK_SIZE = 1000000;
+static const unsigned int MAX_POSSIBLE_BLOCK_SIZE = 8000000;
 /** Coinbase transaction outputs can only be spent after this number of new blocks (network rule) */
 static const int COINBASE_MATURITY = 100;
 
