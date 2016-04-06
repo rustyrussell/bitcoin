@@ -2508,7 +2508,7 @@ UniValue fundrawtransaction(const UniValue& params, bool fHelp)
 
     if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
-                            "fundrawtransaction \"hexstring\" includeWatching\n"
+                            "fundrawtransaction \"hexstring\" includeWatching extendedFormat\n"
                             "\nAdd inputs to a transaction until it has enough in value to meet its out value.\n"
                             "This will not modify existing inputs, and will add one change output to the outputs.\n"
                             "Note that inputs which were signed may need to be resigned after completion since in/outputs have been added.\n"
@@ -2520,6 +2520,7 @@ UniValue fundrawtransaction(const UniValue& params, bool fHelp)
                             "\nArguments:\n"
                             "1. \"hexstring\"     (string, required) The hex string of the raw transaction\n"
                             "2. includeWatching (boolean, optional, default false) Also select inputs which are watch only\n"
+                            "3. extendedFormat (boolean, optional, default false) Transaction is in extended BIP144 form\n"
                             "\nResult:\n"
                             "{\n"
                             "  \"hex\":       \"value\", (string)  The resulting raw transaction (hex-encoded string)\n"
@@ -2540,9 +2541,13 @@ UniValue fundrawtransaction(const UniValue& params, bool fHelp)
 
     RPCTypeCheck(params, boost::assign::list_of(UniValue::VSTR)(UniValue::VBOOL));
 
+    bool extendedFormat = false;
+    if (params.size() > 2)
+        extendedFormat = params[2].get_bool();
+
     // parse hex string from parameter
     CTransaction origTx;
-    if (!DecodeHexTx(origTx, params[0].get_str()))
+    if (!DecodeHexTx(origTx, params[0].get_str(), extendedFormat))
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX decode failed");
 
     if (origTx.vout.size() == 0)

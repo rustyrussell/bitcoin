@@ -90,13 +90,13 @@ CScript ParseScript(const std::string& s)
     return result;
 }
 
-bool DecodeHexTx(CTransaction& tx, const std::string& strHexTx)
+bool DecodeHexTx(CTransaction& tx, const std::string& strHexTx, bool witnessFormatOK)
 {
     if (!IsHex(strHexTx))
         return false;
 
     vector<unsigned char> txData(ParseHex(strHexTx));
-    CDataStream ssData(txData, SER_NETWORK, PROTOCOL_VERSION | SERIALIZE_TRANSACTION_WITNESS);
+    CDataStream ssData(txData, SER_NETWORK, PROTOCOL_VERSION | (witnessFormatOK ? SERIALIZE_TRANSACTION_WITNESS : 0));
     try {
         ssData >> tx;
     }
