@@ -98,6 +98,7 @@ BITCOIN_CORE_H = \
   core_io.h \
   core_memusage.h \
   cuckoocache.h \
+  fec.h \
   httprpc.h \
   httpserver.h \
   indirectmap.h \
@@ -195,6 +196,7 @@ libbitcoin_server_a_SOURCES = \
   blockencodings.cpp \
   chain.cpp \
   checkpoints.cpp \
+  fec.cpp \
   httprpc.cpp \
   httpserver.cpp \
   init.cpp \
