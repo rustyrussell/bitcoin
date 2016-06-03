@@ -138,6 +138,8 @@ CSHA256::CSHA256() : bytes(0)
     sha256::Initialize(s);
 }
 
+extern "C" void sha256_avx(const void *, uint32_t[8], uint64_t);
+
 CSHA256& CSHA256::Write(const unsigned char* data, size_t len)
 {
     const unsigned char* end = data + len;
@@ -147,15 +149,22 @@ CSHA256& CSHA256::Write(const unsigned char* data, size_t len)
         memcpy(buf + bufsize, data, 64 - bufsize);
         bytes += 64 - bufsize;
         data += 64 - bufsize;
-        sha256::Transform(s, buf);
+        sha256_avx(buf, s, 1);
+        //sha256::Transform(s, buf);
         bufsize = 0;
     }
-    while (end >= data + 64) {
+    uint64_t chunks = (end - data) / 64;
+    if (chunks) {
+        sha256_avx(data, s, chunks);
+        bytes += chunks * 64;
+        data += chunks * 64;
+    }
+    /*while (end >= data + 64) {
         // Process full chunks directly from the source.
         sha256::Transform(s, data);
         bytes += 64;
         data += 64;
-    }
+    }*/
     if (end > data) {
         // Fill the buffer with what remains.
         memcpy(buf + bufsize, data, end - data);
