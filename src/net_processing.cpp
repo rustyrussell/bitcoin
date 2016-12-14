@@ -2210,8 +2210,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             // Since we requested this block (it was in mapBlocksInFlight), force it to be processed,
             // even if it would not be a candidate for new tip (missing previous block, chain not long enough, etc)
             ProcessNewBlock(chainparams, pblock, true, &fNewBlock);
-            if (fNewBlock)
+            if (fNewBlock) {
                 pfrom->nLastBlockTime = GetTime();
+                if (fLogIPs)
+                    LogPrint("bench", "Block %s provided by %s\n", resp.blockhash.ToString(), pfrom->addr.ToString());
+            }
         }
     }
 
@@ -2389,8 +2392,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         }
         bool fNewBlock = false;
         ProcessNewBlock(chainparams, pblock, forceProcessing, &fNewBlock);
-        if (fNewBlock)
+        if (fNewBlock) {
             pfrom->nLastBlockTime = GetTime();
+            if (fLogIPs)
+                LogPrint("bench", "Block %s provided by %s\n", pblock->GetHash().ToString(), pfrom->addr.ToString());
+        }
     }
 
 
