@@ -814,6 +814,11 @@ void PeerLogicValidation::NewPoWValidBlock(const CBlockIndex *pindex, const std:
             state.pindexBestHeaderSent = pindex;
         }
     });
+
+    connman->ForEachNode([this, &pblock, &msgMaker, fWitnessEnabled](CNode* pnode) {
+        if (!fWitnessEnabled && pnode->strSubVer == "/RelayNetworkServer:42/")
+            connman->PushMessage(pnode, msgMaker.Make(SERIALIZE_TRANSACTION_NO_WITNESS, NetMsgType::BLOCK, *pblock));
+    });
 }
 
 void PeerLogicValidation::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload) {
