@@ -8,6 +8,7 @@
 #include "addrman.h"
 #include "arith_uint256.h"
 #include "blockencodings.h"
+#include "prefilledblock.h"
 #include "chainparams.h"
 #include "consensus/validation.h"
 #include "hash.h"
@@ -1429,6 +1430,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             nCMPCTBLOCKVersion = 1;
             connman.PushMessage(pfrom, msgMaker.Make(NetMsgType::SENDCMPCT, fAnnounceUsingCMPCTBLOCK, nCMPCTBLOCKVersion));
         }
+        if (pfrom->strSubVer.size() > 18 && !pfrom->strSubVer.compare(0, 18, "/BitcoinUnlimited:")) {
+            uint64_t flags = 2;
+            connman.PushMessage(pfrom, msgMaker.Make(NetMsgType::REQ_XPEDITED, flags));
+        }
         pfrom->fSuccessfullyConnected = true;
     }
 
@@ -2608,6 +2613,85 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         // We do not care about the NOTFOUND message, but logging an Unknown Command
         // message would be undesirable as we transmit it ourselves.
     }
+
+
+    else if (strCommand == NetMsgType::XB && !fImporting && !fReindex) // Ignore blocks received while importing
+    {
+        unsigned char type, hops;
+        CBlockHeaderAndCheapHashTxIDs cmpctblock;
+        vRecv >> type >> hops >> cmpctblock;
+
+        {
+        LOCK(cs_main);
+
+        if (mapBlockIndex.find(cmpctblock.header.hashPrevBlock) == mapBlockIndex.end()) {
+            // Doesn't connect (or is genesis), instead of DoSing in AcceptBlockHeader, request deeper headers
+            if (!IsInitialBlockDownload())
+                connman.PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexBestHeader), uint256()));
+            return true;
+        }
+        }
+
+        const CBlockIndex *pindex = NULL;
+        CValidationState state;
+        if (!ProcessNewBlockHeaders({cmpctblock.header}, state, chainparams, &pindex)) {
+            int nDoS;
+            if (state.IsInvalid(nDoS)) {
+                if (nDoS > 0) {
+                    LOCK(cs_main);
+                    Misbehaving(pfrom->GetId(), nDoS);
+                }
+                LogPrintf("Peer %d sent us invalid header via cmpctblock\n", pfrom->id);
+                return true;
+            }
+        }
+
+        std::shared_ptr<const CBlock> pblock;
+
+        {
+        LOCK(cs_main);
+        // If AcceptBlockHeader returned true, it set pindex
+        assert(pindex);
+        UpdateBlockAvailability(pfrom->GetId(), pindex->GetBlockHash());
+
+        if (pindex->nStatus & BLOCK_HAVE_DATA) // Nothing to do here
+            return true;
+
+        if (IsWitnessEnabled(pindex->pprev, chainparams.GetConsensus())) {
+            // Don't bother trying to process compact blocks from v1 peers
+            // after segwit activates.
+            return true;
+        }
+
+        pblock = cmpctblock.MaybeGetBlock(&mempool, vExtraTxnForCompact);
+        } // cs_main
+
+        if (pblock) {
+            // We disable virtually all DoS checks here because BU is horribly broken
+            bool fNewBlock = false;
+            ProcessNewBlock(chainparams, pblock, true, &fNewBlock);
+            if (fNewBlock)
+                pfrom->nLastBlockTime = GetTime();
+
+            LOCK(cs_main); // hold cs_main for CBlockIndex::IsValid()
+            if (pindex->IsValid(BLOCK_VALID_TRANSACTIONS)) {
+                // Clear download state for this block, which may be in
+                // process from some other peer.  We do this after calling
+                // ProcessNewBlock so that a malleated cmpctblock announcement
+                // can't be used to interfere with block relay.
+                MarkBlockAsReceived(pblock->GetHash());
+            }
+        } else {
+            // If this was an announce-cmpctblock, we want the same treatment as a header message
+            // Dirty hack to process as if it were just a headers message (TODO: move message handling into their own functions)
+            std::vector<CBlock> headers;
+            headers.push_back(cmpctblock.header);
+            CDataStream vHeadersMsg(SER_NETWORK, PROTOCOL_VERSION);
+            vHeadersMsg << headers;
+            return ProcessMessage(pfrom, NetMsgType::HEADERS, vHeadersMsg, nTimeReceived, chainparams, connman, interruptMsgProc);
+        }
+    }
+
 
     else {
         // Ignore unknown commands for extensibility

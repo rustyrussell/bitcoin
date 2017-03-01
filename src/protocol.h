@@ -240,6 +240,18 @@ extern const char *GETBLOCKTXN;
  * @since protocol version 70014 as described by BIP 152
  */
 extern const char *BLOCKTXN;
+/**
+ * Request fast-relay xthin blocks (these do not require
+ * much xthin-specific logic - they dont have any bloom
+ * logic, only a list of transactions and truncated
+ * hashes).
+ */
+extern const char *REQ_XPEDITED;
+/**
+ * Fast-relay xthin block (just truncated hashes and
+ * a list of extra transactions).
+ */
+extern const char *XB;
 };
 
 /* Get a vector of all valid message types (see above) */
