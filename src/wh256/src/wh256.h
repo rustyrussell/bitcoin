@@ -29,6 +29,8 @@
 #ifndef WH256_H
 #define WH256_H
 
+#define FEC_CHUNK_SIZE 1152
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -156,6 +158,15 @@ extern int wh256_decoder_becomes_encoder(wh256_state E);
  */
 extern void wh256_free(wh256_state E);
 
+/*
+ * Free data-specific storage associated with a state object
+ */
+extern void wh256_free_blocks(wh256_state E);
+
+/*
+ * Duplicate state object
+ */
+extern wh256_state wh256_duplicate(wh256_state E);
 
 #ifdef __cplusplus
 }
