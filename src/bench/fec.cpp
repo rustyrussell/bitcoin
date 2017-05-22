@@ -238,18 +238,22 @@ static void RealFECedBlockRoundTripTest(benchmark::State& state, int ntxn, bool 
     DoRealFECedBlockRoundTripTest(state, pool, block, fIncludeBlock);
 }
 
+#if 0
 static void FECBlockRTTTest0(benchmark::State& state) { RealFECedBlockRoundTripTest(state, 0); }
 static void FECBlockRTTTest0500(benchmark::State& state) { RealFECedBlockRoundTripTest(state, 500); }
 static void FECBlockRTTTest1000(benchmark::State& state) { RealFECedBlockRoundTripTest(state, 1000); }
 static void FECBlockRTTTest1500(benchmark::State& state) { RealFECedBlockRoundTripTest(state, 1500); }
 static void FECBlockRTTTest1550(benchmark::State& state) { RealFECedBlockRoundTripTest(state, 1550); }
+#endif
 
 static void FECHeaderRTTTest1550(benchmark::State& state) { RealFECedBlockRoundTripTest(state, 1550, false); }
 
+#if 0
 BENCHMARK(FECBlockRTTTest0);
 BENCHMARK(FECBlockRTTTest0500);
 BENCHMARK(FECBlockRTTTest1000);
 BENCHMARK(FECBlockRTTTest1500);
 BENCHMARK(FECBlockRTTTest1550);
+#endif
 
 BENCHMARK(FECHeaderRTTTest1550);
