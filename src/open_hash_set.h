@@ -86,18 +86,12 @@ public:
 
     iterator find(const value_type& value) {
         size_t pos = hash_base(hash_instance(value));
-        size_t i = 0;
-        while (i < scan_max) {
+        while (!equal_instance(table[pos], value)) {
             if (null_instance(table[pos]))
-               break;
-            if (equal_instance(table[pos], value))
-               break;
+                return end();
             pos = (pos + 1)  & ((size_type(1) << bits)-1);
-            i++;
         }
 
-        if (i == scan_max || null_instance(table[pos]) || !equal_instance(table[pos], value))
-            return end();
         return iterator(&table[pos]);
     }
 
