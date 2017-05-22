@@ -206,8 +206,6 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
             break;
     }
 
-    fprintf(stderr, "Total insert hashes = %zu, total find hashes = %zu\n",
-            shorttxids.total_insert_hashes, shorttxids.total_find_hashes);
     if (fBench) {
         std::chrono::steady_clock::time_point finished(std::chrono::steady_clock::now());
         LogPrintf("PartiallyDownloadedBlock::InitData took %lf %lf %lf ms\n", to_millis_double(prefilled_filled - start), to_millis_double(shortids_mapped - prefilled_filled), to_millis_double(finished - shortids_mapped));
