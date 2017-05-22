@@ -30,6 +30,7 @@ public:
         bool operator<(iterator x) const { return ptr < x.ptr; }
     };
 
+    size_type total_insert_hashes = 0, total_find_hashes = 0;
 private:
     hasher hash_instance;
     key_equal equal_instance;
@@ -53,6 +54,7 @@ public:
         size_t pos;
         size_t i = 0;
         while (i < scan_max) {
+            total_insert_hashes++;
             pos = hash_pos(hash_instance(value), i);
             if (null_instance(table[pos]))
                break;
@@ -77,6 +79,7 @@ public:
         size_t pos;
         size_t i = 0;
         while (i < scan_max) {
+            total_find_hashes++;
             pos = hash_pos(hash_instance(value), i);
             if (null_instance(table[pos]))
                break;
