@@ -147,19 +147,20 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
         if (i + 1 < vTxHashes.size())
             next_shortid = cmpctblock.GetShortID(vTxHashes[i + 1].first);
         const ShortIdIndexPair *p = shorttxids.find_fast(ShortIdIndexPair(shortid));
-        if (p) {
-            if (!have_txn[p->index]) {
-                txn_available[p->index] = vTxHashes[i].second->GetSharedTx();
-                have_txn[p->index] = true;
-                mempool_count++;
-            } else {
-                // If we find two mempool txn that match the short id, just request it.
-                // This should be rare enough that the extra bandwidth doesn't matter,
-                // but eating a round-trip due to FillBlock failure would be annoying
-                if (txn_available[p->index]) {
-                    txn_available[p->index].reset();
-                    mempool_count--;
-                }
+        if (!p)
+            continue;
+
+        if (!have_txn[p->index]) {
+            txn_available[p->index] = vTxHashes[i].second->GetSharedTx();
+            have_txn[p->index] = true;
+            mempool_count++;
+        } else {
+            // If we find two mempool txn that match the short id, just request it.
+            // This should be rare enough that the extra bandwidth doesn't matter,
+            // but eating a round-trip due to FillBlock failure would be annoying
+            if (txn_available[p->index]) {
+                txn_available[p->index].reset();
+                mempool_count--;
             }
         }
         shortid = next_shortid;
