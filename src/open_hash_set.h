@@ -35,8 +35,11 @@ private:
     key_equal equal_instance;
     IsKeyNull null_instance;
     const size_type bits;
+    // With 1/4 chance of a bucket being full, this means 1 in 2^40 of this
+    // many in a row.
+    static const int scan_max = 20;
     std::vector<value_type> table;
-    size_type count = 0, scan_max;
+    size_type count = 0;
 
     /* Hash should be uniform already. */
     inline size_t hash_base(uint64_t hash) {
@@ -54,8 +57,7 @@ private:
 public:
     open_hash_set(size_type entry_count) :
         bits(optimal_hashbits(entry_count)),
-        table(1ULL << bits),
-        scan_max(table.size() / 2)
+        table(1ULL << bits)
     {}
 
     std::pair<iterator, bool> insert(const value_type& value) {
