@@ -42,7 +42,7 @@ private:
     size_type count = 0;
 
     /* Hash should be uniform already. */
-    inline size_t hash_base(uint64_t hash) {
+    inline size_t hash_base(uint64_t hash) const {
         return hash & ((size_type(1) << bits)-1);
     }
 
@@ -84,15 +84,15 @@ public:
         return std::make_pair(iterator(&table[pos]), true);
     }
 
-    iterator find(const value_type& value) {
+    const value_type *find_fast(const value_type& value) const {
         size_t pos = hash_base(hash_instance(value));
         while (!equal_instance(table[pos], value)) {
             if (null_instance(table[pos]))
-                return end();
+                return NULL;
             pos = (pos + 1)  & ((size_type(1) << bits)-1);
         }
 
-        return iterator(&table[pos]);
+        return &table[pos];
     }
 
     iterator end() {
