@@ -24,7 +24,8 @@ JSON_TEST_FILES = \
   test/data/script_tests.json \
   test/data/sighash.json \
   test/data/tx_invalid.json \
-  test/data/tx_valid.json
+  test/data/tx_valid.json \
+  test/data/val64_conversion.json
 
 RAW_TEST_FILES = \
   test/data/asmap.raw
@@ -164,6 +165,7 @@ BITCOIN_TESTS =\
   test/uint256_tests.cpp \
   test/util_tests.cpp \
   test/util_threadnames_tests.cpp \
+  test/val64_tests.cpp \
   test/validation_block_tests.cpp \
   test/validation_chainstate_tests.cpp \
   test/validation_chainstatemanager_tests.cpp \
