@@ -1,0 +1,109 @@
+// Copyright (c) 2024 The Bitcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+#ifndef BITCOIN_SCRIPT_VAL64_H
+#define BITCOIN_SCRIPT_VAL64_H
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+/**
+ * This class is used for all modern taproot ops: this is
+ * much more efficient for bit and arithmetic ops on large values.
+ * In practice, vectors are always aligned (and x86 doesn't care anyway),
+ * but we handle unaligned case by copying if required.
+ */
+class Val64 {
+private:
+    // The underlying vector (moved in and out).
+    std::vector<unsigned char> m_charv;
+
+public:
+    Val64();
+    Val64(std::vector<unsigned char> &v);
+
+    // Make a (minimal) val64 from a uint64_t
+    explicit Val64(uint64_t v);
+
+    // Move constructor
+    Val64(Val64&& other) noexcept;
+    // Move assignment operator
+    Val64& operator=(Val64&& other) noexcept;
+
+    void move_from_valtype(std::vector<unsigned char> &vch);
+
+    // Convert to a valtype: CLEARS THE VAL64!
+    std::vector<unsigned char> move_to_valtype();
+
+    // Convert to a 64 bit, or max if it's too large.
+    uint64_t to_u64_ceil(size_t max) const;
+
+    // Invert this to convert to boolean.
+    bool is_zero() const;
+
+    // We use explicit names here, to show that these are *not* generic operations, but consensus constrained.
+    static void op_add(Val64 &v1, Val64 &v2);
+
+    // if v1 < v2: returns false, mangles v1.
+    // otherwise: returns true, sets v1 to v1 - v2.
+    static bool op_sub(Val64 &v1, const Val64 &v2);
+
+    // Returns false if v1 would exceed max_size.
+    static bool op_upshift(Val64 &v1, const Val64 &v2, size_t max_size);
+    static void op_downshift(Val64 &v1, const Val64 &v2);
+
+    // Like shift 1, but normalize.
+    static void op_2mul(Val64 &v1);
+    static void op_2div(Val64 &v1);
+
+    static void op_invert(Val64 &v1);
+
+    static void op_and(Val64 &v1, Val64 &v2);
+    static void op_or(Val64 &v1, Val64 &v2);
+    static void op_xor(Val64 &v1, Val64 &v2);
+
+    // Non-const, since might switch variables.
+    static Val64 op_mul(Val64 &v1, Val64 &v2);
+
+    // Returns false if v2 is 0.
+    static bool op_div(Val64 &v1, Val64 &v2);
+    static bool op_mod(Val64 &v1, Val64 &v2);
+    
+protected:
+    // Copy constructor, useful for tests.
+    Val64(const Val64 &);
+
+    // Swap with the other value
+    void swap(Val64& other);
+
+    // Access the u64-compatible part (you can access raw).
+    uint64_t *access_u64(size_t *num);
+    const uint64_t *access_u64(size_t *num) const;
+
+    // Access the non-u64-compatible part (0 if past end)
+    uint64_t non_access_get(size_t index) const;
+    // This truncates any bytes not in m_charv (returns false if v trimmed)
+    bool non_access_set(size_t index, uint64_t v);
+
+    // Generic accessors: switches between the above.
+    uint64_t get(const uint64_t *access, size_t access_num, size_t idx) const;
+    bool set(uint64_t *access, size_t access_num, size_t idx, uint64_t val);
+
+    // Get u64-equiv size (rounded up to nearest 8 bytes)
+    size_t u64_size() const;
+
+    // Trim trailing zero bytes, returned number trimmed.
+    size_t trim_tail();
+
+    // Trim trailing zeroes: we know u64s from u64_index onward are 0
+    void trim_u64(size_t u64_index);
+
+    // Swap v1 and v2 so v1 is always longer or same size than v2.
+    static void binop_v1_longest(Val64 &v1, Val64 &v2);
+
+    // Test helpers
+    static bool force_unaligned;
+};
+
+#endif // BITCOIN_SCRIPT_VAL64_H
