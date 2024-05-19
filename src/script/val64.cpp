@@ -295,6 +295,13 @@ void Val64::op_add(Val64 &v1, Val64 &v2)
         v1.trim_u64(trailing_zero);
 }
 
+void Val64::op_1add(Val64 &v1)
+{
+    Val64 v2(1);
+
+    op_add(v1, v2);
+}
+
 bool Val64::op_sub(Val64 &v1, const Val64 &v2)
 {
     le64 *v1u64;
@@ -331,6 +338,13 @@ bool Val64::op_sub(Val64 &v1, const Val64 &v2)
 
     // True if v1 >= v2
     return !underflow;
+}
+
+bool Val64::op_1sub(Val64 &v1)
+{
+    const Val64 v2(1);
+
+    return op_sub(v1, v2);
 }
 
 // 0 -> 0

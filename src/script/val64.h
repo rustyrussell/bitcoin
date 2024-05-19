@@ -44,10 +44,12 @@ public:
 
     // We use explicit names here, to show that these are *not* generic operations, but consensus constrained.
     static void op_add(Val64 &v1, Val64 &v2);
+    static void op_1add(Val64 &v1);
 
     // if v1 < v2: returns false, mangles v1.
     // otherwise: returns true, sets v1 to v1 - v2.
     static bool op_sub(Val64 &v1, const Val64 &v2);
+    static bool op_1sub(Val64 &v1);
 
     // Returns false if v1 would exceed max_size.
     static bool op_upshift(Val64 &v1, const Val64 &v2, size_t max_size);
