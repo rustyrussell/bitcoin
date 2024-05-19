@@ -99,5 +99,37 @@ static void VerifyNestedIfScript(benchmark::Bench& bench)
     });
 }
 
+
+static void VerifySchnorr(benchmark::Bench& bench)
+{
+    ECC_Start();
+
+    // Key pair.
+    CKey key;
+    static const std::array<unsigned char, 32> vchKey = {
+        {
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+        }
+    };
+    key.Set(vchKey.begin(), vchKey.end(), false);
+    CPubKey pubkey = key.GetPubKey();
+
+    std::vector<unsigned char> vchSig(64);
+    const uint256 hash = uint256::ONE;
+    key.SignSchnorr(hash, vchSig, NULL, hash);
+
+    XOnlyPubKey xpub(pubkey);
+    Span<const unsigned char> sigbytes(vchSig.data(), vchSig.size());
+    assert(sigbytes.size() == 64);
+
+    // Benchmark.
+    bench.run([&] {
+        bool res = xpub.VerifySchnorr(hash, sigbytes);
+        assert(res);
+    });
+    ECC_Stop();
+}
+    
 BENCHMARK(VerifyScriptBench, benchmark::PriorityLevel::HIGH);
 BENCHMARK(VerifyNestedIfScript, benchmark::PriorityLevel::HIGH);
+BENCHMARK(VerifySchnorr, benchmark::PriorityLevel::LOW);
