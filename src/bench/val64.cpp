@@ -403,6 +403,41 @@ BENCHMARK(Val64InvertMisalign, benchmark::PriorityLevel::LOW);
 BENCHMARK(Val64InvertAlign, benchmark::PriorityLevel::LOW);
 BENCHMARK(Val64InvertNaive, benchmark::PriorityLevel::LOW);
 
+static void mul_bench(benchmark::Bench& bench)
+{
+    size_t size1 = bench_size("VAL64_BENCH_MUL1_BYTES");
+    size_t size2 = bench_size("VAL64_BENCH_MUL2_BYTES");
+    std::vector<unsigned char> v1(size1, 0xFF), v2(size2, 0xFF), resvec;
+
+    bench.run([&] {
+        Val64 v641(v1), v642(v2);
+        Val64 res = Val64::op_mul(v641, v642);
+        resvec = res.move_to_valtype();
+        assert(resvec.size() == size1 + size2);
+        assert(resvec[0] == 1);
+        assert(resvec[resvec.size()-1] == 0xFF);
+        v1 = v641.move_to_valtype();
+        v2 = v642.move_to_valtype();
+    });
+}
+
+static void Val64MulAlign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(false);
+
+    mul_bench(bench);
+}
+
+static void Val64MulMisalign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(true);
+
+    mul_bench(bench);
+}
+
+BENCHMARK(Val64MulAlign, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64MulMisalign, benchmark::PriorityLevel::LOW);
+
 // For a simple speed comparison
 static void Val64SHA256(benchmark::Bench& bench)
 {

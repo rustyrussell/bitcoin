@@ -219,6 +219,43 @@ void Val64::trim_u64(size_t u64_index)
     assert(trimmed < sizeof(uint64_t));
 }
 
+// Add v1 into this (it is long enough) at word offset off.
+// Returns offset of last zero byte in result.  Will not overflow.
+size_t Val64::add_at_offset(const Val64 &v1, size_t off)
+{
+    le64 *vu64;
+    const le64 *v1u64;
+    size_t vu64len, v1u64len;
+
+    vu64 = access_u64(&vu64len);
+    v1u64 = v1.access_u64(&v1u64len);
+
+    // Little endian, overflow forward.
+    bool carry = false;
+
+    // We track the last non-zero val, so we don't have
+    // to traverse again to trim.
+    size_t trailing_zero = 0;
+
+    for (size_t i = 0; i < v1.u64_size(); ++i) {
+        uint64_t u1, u2;
+
+        u1 = get(vu64, vu64len, i + off);
+        u2 = v1.get(v1u64, v1u64len, i);
+
+        carry = __builtin_add_overflow(u1, carry, &u1);
+        carry |= __builtin_add_overflow(u1, u2, &u1);
+        if (!set(vu64, vu64len, i + off, u1))
+            abort();
+        if (u1 != 0)
+            trailing_zero = i + 1;
+    }
+
+    // You promised it wouldn't overflow
+    assert(!carry);
+    return trailing_zero;
+}
+    
 void Val64::op_add(Val64 &v1, Val64 &v2)
 {
     le64 *v1u64;
@@ -451,4 +488,82 @@ void Val64::op_xor(Val64 &v1, Val64 &v2)
         v1.set(v1u64, v1u64len, i,
                v1.get(v1u64, v1u64len, i) ^ v2.get(v2u64, v2u64len, i));
     }
+}
+
+void Val64::mul_vector(Val64 &res, uint64_t mul) const
+{
+    const le64 *vu64;
+    le64 *resu64;
+    size_t vu64len, resu64len;
+
+    vu64 = access_u64(&vu64len);
+    resu64 = res.access_u64(&resu64len);
+
+    // Result must be (at least) 1 word larger, for carry.
+    assert(res.u64_size() >= u64_size() + 1);
+
+    // Calculate this * mul, into res.
+    res.set(resu64, resu64len, 0, 0);
+    for (size_t i = 0; i < u64_size(); i++) {
+        uint64_t hi, lo, oldhi;
+
+        // Take advantage of 64 bit multiplier if platform
+        // has it (otherwise falls back to software)
+        unsigned __int128 product;
+
+        product = get(vu64, vu64len, i);
+        product *= mul;
+        hi = product >> 64;
+        lo = product;
+
+        oldhi = res.get(resu64, resu64len, i);
+        /* Note: hi cannot overflow since UINT64MAX * UINT64MAX
+         * gives an upper u64 which is < UINT64MAX. */
+        if (__builtin_add_overflow(lo, oldhi, &lo))
+            hi++;
+        res.set(resu64, resu64len, i, lo);
+        res.set(resu64, resu64len, i+1, hi);
+    }
+}
+
+Val64 Val64::op_mul(Val64 &v1, Val64 &v2)
+{
+    const le64 *v1u64;
+    size_t v1u64len;
+
+    // Slightly more optimal if v1 is the larger operand.
+    binop_v1_longest(v1, v2);
+
+    // Access into v1.
+    v1u64 = v1.access_u64(&v1u64len);
+
+    // Result.
+    std::vector<unsigned char> retvec(v1.m_charv.size() + v2.m_charv.size());
+    Val64 ret(retvec);
+
+    // Result of each v1[] * v2 (make it whole u64s).
+    std::vector<unsigned char> scratchvec((v2.u64_size() + 1) * sizeof(uint64_t));
+    Val64 scratch(scratchvec);
+
+    // Track where last 0 was in v1, so trimming doesn't traverse again.
+    size_t trailing_zero = 0;
+    
+    for (size_t i = 0; i < v1.u64_size(); i++) {
+        size_t this_trailing_zero;
+
+        // Multiply v2 by v1[i].
+        v2.mul_vector(scratch, v1.get(v1u64, v1u64len, i));
+
+        // Now add into result at offset i.
+        // Cannot overflow.  Worst case ret effectively adds 1 to v1[i],
+        // which *still* doesn't quite overflow.
+        this_trailing_zero = ret.add_at_offset(scratch, i);
+
+        // If we didn't write anything, don't update.
+        if (this_trailing_zero != 0)
+            trailing_zero = i + this_trailing_zero;
+    }
+
+    ret.trim_u64(trailing_zero);
+    return ret;
 }

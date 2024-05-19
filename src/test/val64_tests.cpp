@@ -58,7 +58,8 @@ public:
 
     bool non_access_set(size_t index, uint64_t v) { return Val64::non_access_set(index, v); }
     const uint64_t *access_u64(size_t *num) const { return Val64::access_u64(num); }
-
+    void mul_vector(Val64 &res, uint64_t mul) const { return Val64::mul_vector(res, mul); }
+    size_t add_at_offset(const Val64 &v1, size_t off) { return Val64::add_at_offset(v1, off); }
     std::vector<uint64_t> copy_vector() {
         std::vector<uint64_t> v;
         for (size_t i = 0; i < u64_size(); i++) {
@@ -553,6 +554,145 @@ BOOST_AUTO_TEST_CASE(val64_downshift)
             v1 = v64.move_to_valtype();
 
             CHECK(v1 == expect);
+        }
+#endif
+    }
+}
+
+BOOST_AUTO_TEST_CASE(val64_add_at_offset)
+{
+    Val64Test res(std::vector<unsigned char>(sizeof(uint64_t) * 2));
+
+    // 0xFFFFFFFFFFFFFFFF
+    const Val64Test u64_max(std::vector<unsigned char>(sizeof(uint64_t), 0xff));
+    size_t trailing_zero;
+
+    // Add at offset 0.
+    trailing_zero = res.add_at_offset(u64_max, 0);
+    assert(res.get(0) == 0xFFFFFFFFFFFFFFFFULL);
+    assert(res.get(1) == 0);
+    assert(trailing_zero == 1);
+
+    // Add at offset 1.
+    trailing_zero = res.add_at_offset(u64_max, 1);
+    assert(res.get(0) == 0xFFFFFFFFFFFFFFFFULL);
+    assert(res.get(1) == 0xFFFFFFFFFFFFFFFFULL);
+    assert(trailing_zero == 1);
+}
+    
+BOOST_AUTO_TEST_CASE(val64_mul_vector)
+{
+    Val64Test::set_force_unaligned(false);
+
+    // Mulitply this by mul, place into res.
+    for (size_t i = 0; i < 128; i++) {
+        for (size_t j = 0; j < 65; j++) {
+            Val64Test v64a(vec_setbit(i));
+
+            // Initial contents shouldn't matter, but size needs to match.
+            size_t vecsize = (v64a.u64_size() + 1) * sizeof(uint64_t);
+            std::vector<unsigned char> dummy(vecsize, 1|j);
+            Val64 res64(dummy);
+
+            if (j == 64) {
+                // Test multiply by 0
+                v64a.mul_vector(res64, 0);
+            } else {
+                v64a.mul_vector(res64, (uint64_t)1 << j);
+            }
+
+            // mul_vector does not trim zeros.
+            std::vector<unsigned char> expected(vecsize);
+            if (j != 64)
+                expected = vec_setbit(i + j, expected);
+            CHECK(res64.move_to_valtype() == expected);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(val64_mul)
+{
+    for (bool unaligned: {false, true}) {
+        Val64Test::set_force_unaligned(unaligned);
+
+        for (size_t i = 0; i < 128; i++) {
+            for (size_t j = 0; j < 129; j++) {
+                std::vector<unsigned char> va = vec_setbit(i), vb;
+
+                if (j != 129) // Test multiply by 0!
+                    vb = vec_setbit(j);
+                BOOST_TEST_MESSAGE("Multiply " << vector_to_string(va) << " by " << vector_to_string(vb));
+
+                Val64 v64a(va);
+                Val64 v64b(vb);
+                Val64 ret = Val64::op_mul(v64a, v64b);
+                auto retvec = ret.move_to_valtype();
+
+                std::vector<unsigned char> expected;
+                if (j != 129)
+                    expected = vec_setbit(i + j);
+
+                BOOST_TEST_MESSAGE("Got " << vector_to_string(retvec) << " expected " << vector_to_string(expected));
+
+                CHECK(retvec == expected);
+            }
+        }
+
+        // Also easy to test N-1.
+        for (size_t i = 1; i < 128; i++) {
+            for (size_t j = 0; j < 128; j++) {
+                std::vector<unsigned char> va, vb;
+
+                for (size_t n = 0; n < i; n++)
+                    va = vec_setbit(n, va);
+                vb = vec_setbit(j);
+                BOOST_TEST_MESSAGE("Multiply " << vector_to_string(va) << " by " << vector_to_string(vb));
+
+                Val64 v64a(va);
+                Val64 v64b(vb);
+                Val64 ret = Val64::op_mul(v64a, v64b);
+                auto retvec = ret.move_to_valtype();
+
+                // Subtract 1 j.
+                Val64Test expected64(vec_setbit(i + j));
+                Val64Test single(vec_setbit(j));
+                bool ok = Val64::op_sub(expected64, single);
+                assert(ok);
+                std::vector<unsigned char> expected = expected64.move_to_valtype();
+
+                BOOST_TEST_MESSAGE("Got " << vector_to_string(retvec) << " expected " << vector_to_string(expected));
+
+                CHECK(retvec == expected);
+            }
+        }        
+
+#ifdef USE_GMP
+        for (size_t i = 0; i < 1000; i++) {
+            size_t len1 = InsecureRandRange(50);
+            size_t len2 = InsecureRandRange(50);
+
+            std::vector<unsigned char> v1 =    g_insecure_rand_ctx.randbytes(len1);
+            std::vector<unsigned char> v2 =    g_insecure_rand_ctx.randbytes(len2);
+
+            BOOST_TEST_MESSAGE("Multiplying " << vector_to_string(v1) << " by " << vector_to_string(v2));
+
+            // GMP version
+            mpz_t mpz1, mpz2, mpz_result;
+            vector_to_mpz(v1, mpz1);
+            vector_to_mpz(v2, mpz2);
+            mpz_init(mpz_result);
+            mpz_mul(mpz_result, mpz1, mpz2);
+
+            std::vector<uint8_t> expect = mpz_to_vector(mpz_result);
+            mpz_clears(mpz1, mpz2, mpz_result, NULL);
+
+            // Val64 version
+            Val64 v64a(v1);
+            Val64 v64b(v2);
+            Val64 ret64 = Val64::op_mul(v64a, v64b);
+            std::vector<uint8_t> ret = ret64.move_to_valtype();
+
+            CHECK(ret == expect);
         }
 #endif
     }

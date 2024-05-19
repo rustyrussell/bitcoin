@@ -105,6 +105,12 @@ protected:
     // Right shift by this many words, and this many bits (1-63 incl).
     void bitshift_down(size_t words, size_t bits);
 
+    // Addition within *this at word offset (for multiply).
+    size_t add_at_offset(const Val64 &v1, size_t off);
+
+    // Mulitply this by mul, place into res.
+    void mul_vector(Val64 &res, uint64_t mul) const;
+
     // Test helpers
     static bool force_unaligned;
 };
