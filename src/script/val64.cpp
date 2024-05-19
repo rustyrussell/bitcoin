@@ -920,8 +920,8 @@ size_t Val64::op_mul_varcost(const Val64 &v1, const Val64 &v2)
 {
     // BIP#ops:
     // |OP_MUL
-    // |Sum of operand lengths + (length(A) / 8 *rounded up*) x (length(B) + 1) x 2
-    return v1.m_charv.size() + v2.m_charv.size() + (v1.m_charv.size() + 7) / 8 + (v2.m_charv.size() + 1);
+    // |Length of A + length of B + (length of A + 7) / 8 * (length of B + 1) * 3
+    return v1.m_charv.size() + v2.m_charv.size() + (v1.m_charv.size() + 7) / 8 * (v2.m_charv.size() + 1) * 3;
 }
 
 size_t Val64::op_div_varcost(const Val64 &v1, const Val64 &v2)

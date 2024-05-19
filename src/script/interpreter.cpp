@@ -1220,6 +1220,25 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                     valtype& vch = stacktop(-1);
                     valtype vchHash((opcode == OP_RIPEMD160 || opcode == OP_SHA1 || opcode == OP_HASH160) ? 20 : 32);
+                    // BIP#ops:
+                    // OP_RIPEMD160 and OP_SHA1 are now defined to FAIL if their operands exceed 520 bytes.
+                    if (opcode == OP_RIPEMD160 || opcode == OP_SHA1) {
+                        // Cannot happen outside Tapscript v2
+                        if (vch.size() > MAX_SCRIPT_ELEMENT_SIZE) {
+                            return set_error(serror, SCRIPT_ERR_PUSH_SIZE);
+                        }
+                    } else {
+                        // BIP#ops:
+                        // |OP_SHA256
+                        // |(Length of the operand) x 8
+                        // |-
+                        // |OP_HASH160
+                        // |(Length of the operand) x 8
+                        // |-
+                        // |OP_HASH256
+                        // |(Length of the operand) x 8
+                        varcost += vch.size() * VAROPS_COST_PER_BYTE_HASHED;
+                    }
                     if (opcode == OP_RIPEMD160)
                         CRIPEMD160().Write(vch.data(), vch.size()).Finalize(vchHash.data());
                     else if (opcode == OP_SHA1)
