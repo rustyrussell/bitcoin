@@ -29,6 +29,146 @@ static size_t bench_size(const char *varname = "VAL64_BENCH_BYTES")
 	return atol(env);
 }
 
+// This grows a little over time, but that's noise.
+static void add_bench(benchmark::Bench& bench)
+{
+    std::vector<unsigned char> v1(bench_size(), 1), v2(bench_size(), 1);
+    size_t n = 0;
+
+    bench.run([&] {
+        Val64 v641(v1), v642(v2);
+        Val64::op_add(v641, v642);
+        v1 = v641.move_to_valtype();
+        v2 = v642.move_to_valtype();
+        n++;
+    });
+    assert(v1.size() == bench_size() + n/256);
+    assert(v1[0] == (unsigned char)(n + 1));
+    assert(v2.size() == bench_size());
+}
+
+static void Val64AddMisalign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(true);
+
+    add_bench(bench);
+}
+
+static void Val64AddAlign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(false);
+
+    add_bench(bench);
+}
+
+static void naive_add(std::vector<unsigned char> &v1,
+                      std::vector<unsigned char> &v2)
+{
+    // We make sure v1 is the bigger.
+    if (v1.size() < v2.size())
+        v1.swap(v2);
+
+    // Little endian, overflow forward.
+    bool carry = false;
+    for (size_t i = 0; i < v1.size(); i++) {
+        carry = __builtin_add_overflow(v1[i], carry, &v1[i]);
+        if (i < v2.size()) {
+            carry |= __builtin_add_overflow(v1[i], v2[i], &v1[i]);
+        } else {
+            // v2 finished, if there's no carry, we can stop.
+            if (!carry)
+                break;
+        }
+    }
+
+    if (carry)
+        v1.push_back(carry);
+}
+
+static void Val64AddNaive(benchmark::Bench& bench)
+{
+    std::vector<unsigned char> v1(bench_size(), 1), v2(bench_size(), 1);
+
+    bench.run([&] {
+        naive_add(v1, v2);
+    });
+}
+
+BENCHMARK(Val64AddMisalign, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64AddAlign, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64AddNaive, benchmark::PriorityLevel::LOW);
+
+static void sub_bench(benchmark::Bench& bench)
+{
+    std::vector<unsigned char> v1(bench_size(), 0xFF), v2(bench_size(), 1);
+    size_t n = 0;
+
+    bench.run([&] {
+        Val64 v641(v1), v642(v2);
+        Val64::op_sub(v641, v642);
+        v1 = v641.move_to_valtype();
+        v2 = v642.move_to_valtype();
+        n++;
+    });
+    // We assume this doesn't run *too* many times!
+    assert(n < 256);
+    assert(v1.size() == bench_size());
+    assert(v1[0] == (0xFF - n));
+    assert(v2.size() == bench_size());
+}
+
+static void Val64SubMisalign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(true);
+
+    sub_bench(bench);
+}
+
+static void Val64SubAlign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(false);
+
+    sub_bench(bench);
+}
+
+static bool naive_sub(std::vector<unsigned char> &v1,
+                      std::vector<unsigned char> &v2)
+{
+    // Little endian, underflow forward.
+    bool underflow = false;
+    for (size_t i = 0; i < std::max(v1.size(), v2.size()); i++) {
+        unsigned char u1, u2;
+        if (i < v1.size())
+            u1 = v1[i];
+        else
+            u1 = 0;
+        if (i < v2.size())
+            u2 = v2[i];
+        else
+            u2 = 0;
+        
+        underflow = __builtin_sub_overflow(u1, underflow, &u1);
+        underflow |= __builtin_sub_overflow(u1, u2, &u1);
+        if (i < v1.size()) {
+            v1[i] = u1;
+        }
+    }
+
+    return !underflow;
+}
+
+static void Val64SubNaive(benchmark::Bench& bench)
+{
+    std::vector<unsigned char> v1(bench_size(), 1), v2(bench_size(), 1);
+
+    bench.run([&] {
+        naive_sub(v1, v2);
+    });
+}
+BENCHMARK(Val64SubMisalign, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64SubAlign, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64SubNaive, benchmark::PriorityLevel::LOW);
+
 static void or_bench(benchmark::Bench& bench)
 {
     std::vector<unsigned char> v1(bench_size(), 1), v2(bench_size(), 1);

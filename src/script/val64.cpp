@@ -219,6 +219,83 @@ void Val64::trim_u64(size_t u64_index)
     assert(trimmed < sizeof(uint64_t));
 }
 
+void Val64::op_add(Val64 &v1, Val64 &v2)
+{
+    le64 *v1u64;
+    const le64 *v2u64;
+    size_t v1u64len, v2u64len;
+
+    binop_v1_longest(v1, v2);
+
+    v1u64 = v1.access_u64(&v1u64len);
+    v2u64 = v2.access_u64(&v2u64len);
+
+    // Little endian, overflow forward.
+    bool carry = false;
+    bool trimmed = false;
+
+    // We track the last non-zero val, so we don't have
+    // to traverse again to trim.
+    size_t trailing_zero = 0;
+
+    for (size_t i = 0; i < v1.u64_size(); ++i) {
+        uint64_t u1, u2;
+
+        u1 = v1.get(v1u64, v1u64len, i);
+        u2 = v2.get(v2u64, v2u64len, i);
+
+        carry = __builtin_add_overflow(u1, carry, &u1);
+        carry |= __builtin_add_overflow(u1, u2, &u1);
+        trimmed = !v1.set(v1u64, v1u64len, i, u1);
+        if (u1 != 0)
+            trailing_zero = i + 1;
+    }
+
+    // Final carry, or final set() trimmed
+    if (carry || trimmed)
+        v1.m_charv.push_back(1);
+    else
+        v1.trim_u64(trailing_zero);
+}
+
+bool Val64::op_sub(Val64 &v1, const Val64 &v2)
+{
+    le64 *v1u64;
+    const le64 *v2u64;
+    size_t v1u64len, v2u64len;
+    auto len = std::max(v1.u64_size(), v2.u64_size());
+
+    v1u64 = v1.access_u64(&v1u64len);
+    v2u64 = v2.access_u64(&v2u64len);
+
+    // Little endian, underflow forward.
+    bool underflow = false;
+
+    // We track the last non-zero val, so we don't have
+    // to traverse again to trim.
+    size_t trailing_zero = 0;
+
+    for (size_t i = 0; i < len; ++i) {
+        uint64_t u1, u2;
+
+        u1 = v1.get(v1u64, v1u64len, i);
+        u2 = v2.get(v2u64, v2u64len, i);
+
+        underflow = __builtin_sub_overflow(u1, underflow, &u1);
+        underflow |= __builtin_sub_overflow(u1, u2, &u1);
+        // If we write (non-zero) past end, we underflowed.
+        if (!v1.set(v1u64, v1u64len, i, u1))
+            return false;
+        if (u1 != 0)
+            trailing_zero = i + 1;
+    }
+
+    v1.trim_u64(trailing_zero);
+
+    // True if v1 >= v2
+    return !underflow;
+}
+
 // 0 -> 0
 // [1..8] -> 1
 // [9..16] -> 2
