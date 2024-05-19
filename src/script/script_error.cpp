@@ -115,9 +115,15 @@ std::string ScriptErrorString(const ScriptError serror)
             return "Using OP_CODESEPARATOR in non-witness script";
         case SCRIPT_ERR_SIG_FINDANDDELETE:
             return "Signature is found in scriptCode";
+        case SCRIPT_ERR_DIVIDE_BY_ZERO:
+            return "OP_DIV or OP_MOD by zero";
+        case SCRIPT_ERR_SUB_UNDERFLOW:
+            return "OP_SUB or OP_SUB1 result would be negative";
+        case SCRIPT_ERR_VAROP_COUNT:
+            return "Too many large variable operations";
         case SCRIPT_ERR_UNKNOWN_ERROR:
         case SCRIPT_ERR_ERROR_COUNT:
-        default: break;
+            break;
     }
     return "unknown error";
 }

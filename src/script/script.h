@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-// Maximum number of bytes pushable to the stack
+// Maximum number of bytes pushable to the stack (up to Tapscript v2)
 static const unsigned int MAX_SCRIPT_ELEMENT_SIZE = 520;
 
 // Maximum number of non-push operations per script
@@ -35,11 +35,24 @@ static const int MAX_PUBKEYS_PER_MULTISIG = 20;
 /** The limit of keys in OP_CHECKSIGADD-based scripts. It is due to the stack limit in BIP342. */
 static constexpr unsigned int MAX_PUBKEYS_PER_MULTI_A = 999;
 
-// Maximum script length in bytes
+// Maximum script length in bytes (pre-Taproot)
 static const int MAX_SCRIPT_SIZE = 10000;
 
 // Maximum number of values on script interpreter stack
 static const int MAX_STACK_SIZE = 1000;
+
+// BIP#ops: The individual stack entry limit of 520 bytes is increased to the
+// total block weight (4000000) bytes.  An additional gross limit of twice
+// that applies across all stack entries.
+static const int MAX_TAPSCRIPT_V2_STACK_ELEMENT_SIZE = 4000000;
+static const int MAX_TAPSCRIPT_V2_TOTAL_STACK_SIZE = 2 * MAX_TAPSCRIPT_V2_STACK_ELEMENT_SIZE;
+
+// Varops cost per byte hashed in Tapscript v2
+static const int VAROPS_COST_PER_BYTE_HASHED = 8;
+
+// BIP#ops: A per-transaction "varops budget" is determined by multiplying the
+// total transaction weight by the fixed factor 8250.
+static const int VAROPS_BUDGET_PER_BYTE = 8250;
 
 // Threshold for nLockTime: below this value it is interpreted as block number,
 // otherwise as UNIX timestamp.
