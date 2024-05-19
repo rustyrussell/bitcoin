@@ -769,6 +769,8 @@ Wallet
 General C++
 -------------
 
+Code can assume the C++20 standard.
+
 For general C++ guidelines, you may refer to the [C++ Core
 Guidelines](https://isocpp.github.io/CppCoreGuidelines/).
 
