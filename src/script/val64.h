@@ -130,6 +130,14 @@ protected:
     // Mulitply this by mul, place into res.
     void mul_vector(Val64 &res, uint64_t mul) const;
 
+    enum class divmod_op {
+        VAL64_DIV,
+        VAL64_MOD,
+    };
+    
+    // Div: v1 = v1 / v2.  Mod: v1 = v1 % v2.  False if v2 is zero.
+    static bool div_mod(Val64 &v1, Val64 &v2, divmod_op op);
+
     // Test helpers
     static bool force_unaligned;
 };

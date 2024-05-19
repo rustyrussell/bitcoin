@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <script/val64.h>
+#include <bit>
 #include <cassert>
 #include <cstring>
 #include <memory>
@@ -666,4 +667,184 @@ Val64 Val64::op_mul(Val64 &v1, Val64 &v2)
 
     ret.trim_u64(trailing_zero);
     return ret;
+}
+
+// False iff v2 is 0.
+bool Val64::div_mod(Val64 &v1, Val64 &v2, divmod_op op)
+{
+    // This is BasecaseDivRem from "Modern Computer Arithmetic" by Richard
+    // Brent and Paul Zimmerman.  I discovered later that this is the same as
+    // Knuth's TAOCP v2 (of course!) page 272, Algorithm D "Division of
+    // non-negative integers".
+
+    // For efficiency, the divisor (v2) needs to be *normalized*, i.e.
+    // the top bit is set.  We trim and shift both to ensure this is true.
+
+    // Note: this doesn't cost cost anything!  This is because any
+    // bytes trimmed here (cost == number of bytes trimmed + 1) saves
+    // costs below.
+    v1.trim_tail();
+    v2.trim_tail();
+
+    // Now there's only one canonical zero.
+    if (v2.m_charv.size() == 0)
+        return false;
+
+    // How many bits do we have to shift to get top bit set?
+    size_t k = std::countl_zero(v2.non_access_get(v2.u64_size()-1));
+
+    if (v1.m_charv.size() < v2.m_charv.size()) {
+        // v2 > v1: v1 is remainder, quotient is 0.
+        if (op == divmod_op::VAL64_DIV)
+            v1.m_charv.resize(0);
+        return true;
+    }
+
+    // These might have to reallocate, but by no more than 8 bytes.
+    // In theory, we could save this cost by doing shifting as we go.
+    // But this shift isn't really the main overhead, so keep it simple.
+    if (k != 0) {
+        op_upshift(v1, Val64(k), v1.m_charv.size() + 8);
+        op_upshift(v2, Val64(k), v2.m_charv.size() + 8);
+    }
+
+    // Shift can add a few zero bytes, re-normalize.
+    v1.trim_tail();
+    v2.trim_tail();
+
+    // v1 has n+m words, v2 has n words.  β is the base (2^64 here).
+    assert(v1.u64_size() >= v2.u64_size());
+    size_t n = v2.u64_size();
+    size_t m = v1.u64_size() - n;
+
+    // If we need quotient, create empty q vec, worst-case len.
+    Val64 q;
+    if (op == divmod_op::VAL64_DIV) {
+        std::vector<unsigned char> qvec((m + 1) * sizeof(uint64_t));
+        q.move_from_valtype(qvec);
+    }
+
+    size_t qu64num;
+    uint64_t *qu64 = q.access_u64(&qu64num);
+
+    // 1: if v1 >= β^m x v2, then q_m = 1, v1 = v1 - β^m x v2 else q_m = 0
+    if (v1.cmp_with_offset(v2, m) > -1) {
+        if (op == divmod_op::VAL64_DIV)
+            q.set(qu64, qu64num, m, 1);
+        bool carry;
+        v1.sub_with_offset(v2, m, carry);
+        assert(!carry);
+    } else {
+        if (op == divmod_op::VAL64_DIV)
+            q.set(qu64, qu64num, m, 0);
+    }
+
+    size_t v1u64len;
+    uint64_t *v1u64 = v1.access_u64(&v1u64len);
+    size_t v2u64len;
+    uint64_t *v2u64 = v2.access_u64(&v2u64len);
+
+    // We need a temporary.  Technically C++ insists on initializing
+    // it, but that's unnecessary (and in the noise for large numbers)
+    std::vector<unsigned char> scratchvec((v2.u64_size() + 1) * sizeof(uint64_t));
+    Val64 scratch(scratchvec);
+
+    // 2: for j from m-1 downto 0 do:
+    for (ssize_t j = m - 1; j >= 0; j--) {
+        // 3: q* = floor((v1_n+j_ x β + v1_n+j-1_) / v2_n-1_)
+        unsigned __int128 v;
+        unsigned __int128 qstar;
+        unsigned __int128 rstar;
+
+        v = ((unsigned __int128)v1.get(v1u64, v1u64len, n+j)) << 64
+            | v1.get(v1u64, v1u64len, n+j-1);
+        qstar = v / v2.get(v2u64, v2u64len, n-1);
+
+        // Knuth suggests: (notation reworked to match us, the rest is a
+        // direct quote):
+        
+        // ... let r* be the remainer.
+        // Now test if q* == β, or q* x v2_n-2_ > βr* + v1_n+j-2_:
+        // if so, decrease q* by 1, increase r* by v2_n-1_, and
+        // repeat this test if r* < β. (The test on v2_n-2_ determines at
+        // high speed most of the cases in which the trial value q* is
+        // one too large, and it eliminates /all/ cases where q* is
+        // two too large
+        rstar = v % v2.get(v2u64, v2u64len, n-1);
+
+        if ((qstar >> 64) != 0
+            || (n > 1 && qstar * v2.get(v2u64, v2u64len, n-2)
+                > (rstar << 64) + v1.get(v2u64, v2u64len, n+j-2))) {
+            qstar--;
+            rstar += v2.get(v2u64, v2u64len, n-1);
+            if ((rstar >> 64) == 0
+                && (n > 1 && qstar * v2.get(v2u64, v2u64len, n-2)
+                    > (rstar << 64) + v1.get(v2u64, v2u64len, n+j-2))) {
+                qstar--;
+            }
+        }
+
+        // This is our (64-bit) guess.
+        uint64_t qj = qstar;
+
+        // D4: v1 = v1 - q_j_ x β^j x v2
+
+        // Assign scratch = q_j_ x v2
+        // Note: v2 doesn't change in this loop, so scratch gets fully
+        // overwritten each time, meaning we don't need to zero it.
+        v2.mul_vector(scratch, qj);
+
+        bool underflow;
+        v1.sub_with_offset(scratch, j, underflow);
+        // D5: Set q_j_ = q*.  If the result of D4 was negative, go to D6.
+        if (underflow) {
+            // D6: Decrease q_j_ by 1, and add β^j x v2 to v1
+
+            // FIXME: As Knuth points out, this is a hard to hit case:
+            // solve Exercise 21 so we can test the damn thing!
+
+            // Intuitively: we've got an estimate on v1/v2, using division on
+            // the high words, plus a compensation from the next-highest.  It
+            // could be an overestimate by one, however!
+            qj--;
+            bool carry;
+            v1.add_with_offset(v2, j, carry);
+            assert(carry);
+        }
+
+        // Keep shrinking v1.  Note: we could use the sub/add_with_offset
+        // return to trim a bit faster if we wanted.
+        if (v1.u64_size() > 0) {
+            assert(v1.get(v1u64, v1u64len, v1.u64_size()-1) == 0);
+            v1.m_charv.resize((v1.u64_size()-1) * sizeof(uint64_t));
+        }
+
+        if (op == divmod_op::VAL64_DIV)
+            q.set(qu64, qu64num, j, qj);
+    }
+
+    switch (op) {
+    case divmod_op::VAL64_MOD:
+        // Remainder needs shifting back (quotient is unaffected, since
+        // (A * N) / (B * N) == A / B).
+        if (k != 0 && v1.m_charv.size() != 0)
+            v1.bitshift_down(0, k);
+        v1.trim_tail();
+        return true;
+    case divmod_op::VAL64_DIV:
+        v1 = std::move(q);
+        v1.trim_tail();
+        return true;
+    }
+    assert(!"Invalid op");
+}
+
+bool Val64::op_div(Val64 &v1, Val64 &v2)
+{
+    return div_mod(v1, v2, divmod_op::VAL64_DIV);
+}
+
+bool Val64::op_mod(Val64 &v1, Val64 &v2)
+{
+    return div_mod(v1, v2, divmod_op::VAL64_MOD);
 }

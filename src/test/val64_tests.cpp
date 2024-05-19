@@ -51,9 +51,11 @@ public:
     // Unlike Val64, this makes a copy.
     Val64Test(std::vector<unsigned char> v): Val64(v) { };
     Val64Test(const Val64Test &v): Val64(v) { };
+    Val64Test() { };
 
     size_t u64_size() const { return Val64::u64_size(); }
     uint64_t get(size_t i) const { return Val64::non_access_get(i); }
+    size_t trim_tail() { return Val64::trim_tail(); }
     static void set_force_unaligned(bool val) { Val64::force_unaligned = val; }
 
     bool non_access_set(size_t index, uint64_t v) { return Val64::non_access_set(index, v); }
@@ -921,6 +923,92 @@ BOOST_AUTO_TEST_CASE(val64_2div)
             v1 = v64.move_to_valtype();
 
             CHECK(v1 == expect);
+        }
+#endif
+    }
+}
+
+BOOST_AUTO_TEST_CASE(val64_div_mod)
+{
+    for (bool unaligned: {false, true}) {
+        Val64Test::set_force_unaligned(unaligned);
+
+        for (size_t i = 0; i < 128; i++) {
+            for (size_t j = 0; j < 129; j++) {
+                std::vector<unsigned char> va = vec_setbit(i), vb;
+
+                if (j != 129) // Test divide by 0!
+                    vb = vec_setbit(j);
+                BOOST_TEST_MESSAGE("Divide " << vector_to_string(va) << " by " << vector_to_string(vb));
+
+                Val64Test v64a_div(va), v64a_mod(va);
+                Val64Test v64b_div(vb), v64b_mod(vb);
+                bool div_ret = Val64Test::op_div(v64a_div, v64b_div);
+                bool mod_ret = Val64Test::op_mod(v64a_mod, v64b_mod);
+                auto div_vec = v64a_div.move_to_valtype();
+                auto mod_vec = v64a_mod.move_to_valtype();
+
+                std::vector<unsigned char> expected_div, expected_remainder;
+                if (j == 129) {
+                    CHECK(div_ret == false);
+                    CHECK(mod_ret == false);
+                } else {
+                    CHECK(div_ret == true);
+                    CHECK(mod_ret == true);
+                    if (i >= j)
+                        expected_div = vec_setbit(i - j);
+                    else
+                        expected_remainder = vec_setbit(i);
+
+                    BOOST_TEST_MESSAGE("Got " << vector_to_string(div_vec) << "/" << vector_to_string(mod_vec) << " expected " << vector_to_string(expected_div) << "/" << vector_to_string(expected_remainder));
+
+                    CHECK(div_vec == expected_div);
+                    CHECK(mod_vec == expected_remainder);
+                }
+            }
+        }
+
+#ifdef USE_GMP
+        for (size_t i = 0; i < 1000; i++) {
+            size_t len1 = InsecureRandRange(50);
+            size_t len2 = InsecureRandRange(50);
+
+            std::vector<unsigned char> v1 =    g_insecure_rand_ctx.randbytes(len1);
+            std::vector<unsigned char> v2 =    g_insecure_rand_ctx.randbytes(len2);
+
+            BOOST_TEST_MESSAGE("Dividing " << vector_to_string(v1) << " by " << vector_to_string(v2));
+
+            // GMP version
+            mpz_t mpz1, mpz2, mpz_result, mpz_remainder;
+            bool expect_success;
+            vector_to_mpz(v1, mpz1);
+            vector_to_mpz(v2, mpz2);
+            mpz_init(mpz_result);
+            mpz_init(mpz_remainder);
+            if (mpz_sgn(mpz2) == 0) {
+                expect_success = false;
+            } else {
+                mpz_fdiv_qr(mpz_result, mpz_remainder, mpz1, mpz2);
+                expect_success = true;
+            }
+            std::vector<uint8_t> expect_res = mpz_to_vector(mpz_result);
+            std::vector<uint8_t> expect_rem = mpz_to_vector(mpz_remainder);
+            mpz_clears(mpz1, mpz2, mpz_result, mpz_remainder, NULL);
+
+            // Val64 version
+            Val64Test v64a_div(v1), v64a_mod(v1);
+            Val64Test v64b_div(v2), v64b_mod(v2);
+            bool div_ret = Val64Test::op_div(v64a_div, v64b_div);
+            bool mod_ret = Val64Test::op_mod(v64a_mod, v64b_mod);
+            auto div_vec = v64a_div.move_to_valtype();
+            auto mod_vec = v64a_mod.move_to_valtype();
+
+            CHECK(div_ret == expect_success);
+            CHECK(mod_ret == expect_success);
+            if (expect_success) {
+                CHECK(div_vec == expect_res);
+                CHECK(mod_vec == expect_rem);
+            }
         }
 #endif
     }

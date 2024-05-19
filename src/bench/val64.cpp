@@ -438,6 +438,45 @@ static void Val64MulMisalign(benchmark::Bench& bench)
 BENCHMARK(Val64MulAlign, benchmark::PriorityLevel::LOW);
 BENCHMARK(Val64MulMisalign, benchmark::PriorityLevel::LOW);
 
+static void div_bench(benchmark::Bench& bench)
+{
+    size_t size1 = bench_size("VAL64_BENCH_DIV1_BYTES");
+    size_t size2 = bench_size("VAL64_BENCH_DIV2_BYTES");
+    std::vector<unsigned char> randvec(size1);
+    std::vector<unsigned char> v1(size1), v2(size2);
+
+    for (size_t i = 0; i < size1; i++)
+        randvec[i] = GetRandInternal(256);
+    for (size_t i = 0; i < size2; i++)
+        v2[i] = GetRandInternal(256);
+
+    bench.run([&] {
+        v1 = randvec;
+        Val64 v641(v1), v642(v2);
+        bool ret = Val64::op_div(v641, v642);
+        assert(ret);
+        v1 = v641.move_to_valtype();
+        v2 = v642.move_to_valtype();
+    });
+}
+
+static void Val64DivAlign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(false);
+
+    div_bench(bench);
+}
+
+static void Val64DivMisalign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(true);
+
+    div_bench(bench);
+}
+
+BENCHMARK(Val64DivAlign, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64DivMisalign, benchmark::PriorityLevel::LOW);
+
 // For a simple speed comparison
 static void Val64SHA256(benchmark::Bench& bench)
 {
