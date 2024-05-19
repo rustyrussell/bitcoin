@@ -60,6 +60,7 @@ public:
     const uint64_t *access_u64(size_t *num) const { return Val64::access_u64(num); }
     void mul_vector(Val64 &res, uint64_t mul) const { return Val64::mul_vector(res, mul); }
     size_t add_with_offset(const Val64 &v1, size_t off, bool &carry) { return Val64::add_with_offset(v1, off, carry); }
+    size_t sub_with_offset(const Val64 &v1, size_t off, bool &underflow) { return Val64::sub_with_offset(v1, off, underflow); }
     int cmp_with_offset(const Val64 &v1, size_t off) { return Val64::cmp_with_offset(v1, off); }
     std::vector<uint64_t> copy_vector() {
         std::vector<uint64_t> v;
@@ -655,6 +656,37 @@ BOOST_AUTO_TEST_CASE(val64_add_with_offset)
     assert(res.get(1) == 0);
     assert(carry);
     assert(trailing_zero == 3);
+}
+    
+BOOST_AUTO_TEST_CASE(val64_sub_with_offset)
+{
+    Val64Test res(std::vector<unsigned char>(sizeof(uint64_t) * 2, 0xFF));
+
+    // 0xFFFFFFFFFFFFFFFF
+    const Val64Test u64_max(std::vector<unsigned char>(sizeof(uint64_t), 0xff));
+    size_t trailing_zero;
+    bool underflow;
+
+    // Sub at offset 1.
+    trailing_zero = res.sub_with_offset(u64_max, 1, underflow);
+    assert(res.get(0) == 0xFFFFFFFFFFFFFFFFULL);
+    assert(res.get(1) == 0);
+    assert(trailing_zero == 1);
+    assert(!underflow);
+
+    // Sub at offset 0.
+    trailing_zero = res.sub_with_offset(u64_max, 0, underflow);
+    assert(res.get(0) == 0);
+    assert(res.get(1) == 0);
+    assert(trailing_zero == 0);
+    assert(!underflow);
+
+    // Sub one more, should underflow.
+    trailing_zero = res.sub_with_offset(Val64(1), 1, underflow);
+    assert(res.get(0) == 0);
+    assert(res.get(1) == 0xFFFFFFFFFFFFFFFFULL);
+    assert(underflow);
+    assert(trailing_zero == 2);
 }
     
 BOOST_AUTO_TEST_CASE(val64_mul_vector)

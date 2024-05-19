@@ -301,42 +301,57 @@ void Val64::op_1add(Val64 &v1)
     op_add(v1, v2);
 }
 
-bool Val64::op_sub(Val64 &v1, const Val64 &v2)
+// *this -= v1 << shift_words*64
+size_t Val64::sub_with_offset(const Val64 &v1, size_t shift_words, bool &underflow)
 {
-    le64 *v1u64;
-    const le64 *v2u64;
-    size_t v1u64len, v2u64len;
-    auto len = std::max(v1.u64_size(), v2.u64_size());
+    le64 *u64;
+    const le64 *v1u64;
+    size_t u64len, v1u64len;
 
+    // This is max(u64_size() - shift_words, v1.u64_size()):
+    auto maxlen = v1.u64_size();
+    if (u64_size() > shift_words && u64_size() - shift_words > maxlen)
+        maxlen = u64_size() - shift_words;
+    
+    u64 = access_u64(&u64len);
     v1u64 = v1.access_u64(&v1u64len);
-    v2u64 = v2.access_u64(&v2u64len);
 
     // Little endian, underflow forward.
-    bool underflow = false;
+    underflow = false;
 
     // We track the last non-zero val, so we don't have
     // to traverse again to trim.
-    size_t trailing_zero = 0;
+    size_t trailing_zero = shift_words;
+    bool trimmed = false;
 
-    for (size_t i = 0; i < len; ++i) {
+    for (size_t i = 0; i < maxlen; ++i) {
         uint64_t u1, u2;
 
-        u1 = v1.get(v1u64, v1u64len, i);
-        u2 = v2.get(v2u64, v2u64len, i);
+        u1 = get(u64, u64len, shift_words + i);
+        u2 = v1.get(v1u64, v1u64len, i);
 
         underflow = __builtin_sub_overflow(u1, underflow, &u1);
         underflow |= __builtin_sub_overflow(u1, u2, &u1);
-        // If we write (non-zero) past end, we underflowed.
-        if (!v1.set(v1u64, v1u64len, i, u1))
-            return false;
+        trimmed = !set(u64, u64len, shift_words + i, u1);
         if (u1 != 0)
-            trailing_zero = i + 1;
+            trailing_zero = shift_words + i + 1;
     }
 
-    v1.trim_u64(trailing_zero);
+    // Underflow at end causes trimmed flag to be set.
+    underflow |= trimmed;
+    return trailing_zero;
+}
 
-    // True if v1 >= v2
-    return !underflow;
+bool Val64::op_sub(Val64 &v1, const Val64 &v2)
+{
+    bool underflow;
+    size_t trailing_zero = v1.sub_with_offset(v2, 0, underflow);
+
+    if (underflow)
+        return false;
+
+    v1.trim_u64(trailing_zero);
+    return true;
 }
 
 bool Val64::op_1sub(Val64 &v1)

@@ -123,6 +123,10 @@ protected:
     // Returns trailing zero offset, sets carry on overflow.
     size_t add_with_offset(const Val64 &v1, size_t shift_words, bool &carry);
 
+    // (*this) -= (v2 << shift_words*64)
+    // Returns trailing zero offset, sets underflow on underflow.
+    size_t sub_with_offset(const Val64 &v1, size_t shift_words, bool &underflow);
+    
     // Mulitply this by mul, place into res.
     void mul_vector(Val64 &res, uint64_t mul) const;
 
