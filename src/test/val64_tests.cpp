@@ -761,4 +761,122 @@ BOOST_AUTO_TEST_CASE(val64_mul)
     }
 }
 
+BOOST_AUTO_TEST_CASE(val64_2mul)
+{
+    for (bool unaligned: {false, true}) {
+        Val64Test::set_force_unaligned(unaligned);
+
+        for (size_t i = 0; i < 129; i++) {
+            for (size_t j = 0; j < 16; j++) {
+                std::vector<unsigned char> va;
+
+                // Test zero case
+                if (i != 128)
+                    va = vec_setbit(i);
+
+                // Append empty bytes (shouldn't make a difference)
+                va.insert(va.end(), j, 0);
+                BOOST_TEST_MESSAGE("2mul " << vector_to_string(va));
+
+                Val64 v64a(va);
+                Val64::op_2mul(v64a);
+                va = v64a.move_to_valtype();
+
+                std::vector<unsigned char> expected;
+
+                if (i != 128)
+                    expected = vec_setbit(i + 1);
+
+                BOOST_TEST_MESSAGE("Got " << vector_to_string(va) << " expected " << vector_to_string(expected));
+
+                CHECK(va == expected);
+            }
+        }
+
+
+#ifdef USE_GMP
+        for (size_t i = 0; i < 1000; i++) {
+            size_t len1 = InsecureRandRange(500);
+            std::vector<unsigned char> v1 =    g_insecure_rand_ctx.randbytes(len1);
+
+            BOOST_TEST_MESSAGE("2mul " << vector_to_string(v1));
+
+            // GMP version
+            mpz_t mpz1, mpz_result;
+            vector_to_mpz(v1, mpz1);
+            mpz_init(mpz_result);
+            mpz_mul_2exp(mpz_result, mpz1, 1);
+
+            std::vector<uint8_t> expect = mpz_to_vector(mpz_result);
+            mpz_clears(mpz1, mpz_result, NULL);
+
+            // Val64 version
+            Val64 v64(v1);
+            Val64::op_2mul(v64);
+            v1 = v64.move_to_valtype();
+
+            CHECK(v1 == expect);
+        }
+#endif
+    }
+}
+
+BOOST_AUTO_TEST_CASE(val64_2div)
+{
+    for (bool unaligned: {false, true}) {
+        Val64Test::set_force_unaligned(unaligned);
+
+        for (size_t i = 0; i < 129; i++) {
+            for (size_t j = 0; j < 16; j++) {
+                std::vector<unsigned char> va;
+
+                // Test zero case
+                if (i != 128)
+                    va = vec_setbit(i);
+
+                // Append empty bytes (shouldn't make a difference)
+                va.insert(va.end(), j, 0);
+
+                BOOST_TEST_MESSAGE("2div " << vector_to_string(va));
+                Val64 v64a(va);
+                Val64::op_2div(v64a);
+                va = v64a.move_to_valtype();
+
+                std::vector<unsigned char> expected;
+                if (i > 0 && i != 128)
+                    expected = vec_setbit(i - 1);
+
+                BOOST_TEST_MESSAGE("Got " << vector_to_string(va) << " expected " << vector_to_string(expected));
+
+                CHECK(va == expected);
+            }
+        }
+
+
+#ifdef USE_GMP
+        for (size_t i = 0; i < 1000; i++) {
+            size_t len1 = InsecureRandRange(500);
+            std::vector<unsigned char> v1 =    g_insecure_rand_ctx.randbytes(len1);
+
+            BOOST_TEST_MESSAGE("2mul " << vector_to_string(v1));
+
+            // GMP version
+            mpz_t mpz1, mpz_result;
+            vector_to_mpz(v1, mpz1);
+            mpz_init(mpz_result);
+            mpz_fdiv_q_2exp(mpz_result, mpz1, 1);
+
+            std::vector<uint8_t> expect = mpz_to_vector(mpz_result);
+            mpz_clears(mpz1, mpz_result, NULL);
+
+            // Val64 version
+            Val64 v64(v1);
+            Val64::op_2div(v64);
+            v1 = v64.move_to_valtype();
+
+            CHECK(v1 == expect);
+        }
+#endif
+    }
+}
 BOOST_AUTO_TEST_SUITE_END()

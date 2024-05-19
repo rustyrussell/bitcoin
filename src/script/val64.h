@@ -108,7 +108,13 @@ protected:
     static void binop_v1_longest(Val64 &v1, Val64 &v2);
 
     // Right shift by this many words, and this many bits (1-63 incl).
-    void bitshift_down(size_t words, size_t bits);
+    // Return offset of trailing zeros, in words.
+    size_t bitshift_down(size_t words, size_t bits);
+
+    // Left shift in place by this many bits.
+    // Return offset of trailing zeros, in words.
+    // carry set to true iff we had overflow.
+    size_t bitshift_up_small(size_t bits, bool &carry);
 
     // Addition within *this at word offset (for multiply).
     size_t add_at_offset(const Val64 &v1, size_t off);

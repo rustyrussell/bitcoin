@@ -375,25 +375,38 @@ size_t Val64::u64_size() const
     return (m_charv.size() + sizeof(uint64_t) - 1) / sizeof(uint64_t);
 }
 
-void Val64::bitshift_down(size_t words, size_t bits)
+size_t Val64::bitshift_down(size_t words, size_t bits)
 {
     le64 *vu64;
     size_t vu64len;
 
+    // Not empty
+    assert(u64_size() != 0);
     assert(bits > 0);
     assert(bits < 64);
 
     vu64 = access_u64(&vu64len);
 
+    // We track the last non-zero val, so we don't have
+    // to traverse again to trim.
+    size_t trailing_zero = 0;
+
     // [B, A] rshift 1 => [B>>1 | A>>63, A << 1]
     uint64_t prev = get(vu64, vu64len, words);
     for (size_t i = words; i < u64_size() - 1; ++i) {
         uint64_t next = get(vu64, vu64len, i + 1);
-        set(vu64, vu64len, i - words, (prev >> bits) | (next << (64 - bits)));
+        uint64_t v = (prev >> bits) | (next << (64 - bits));
+        set(vu64, vu64len, i - words, v);
+        if (v != 0)
+            trailing_zero = i - words + 1;
         prev = next;
     }
     // Shift the last word
     set(vu64, vu64len, u64_size() - 1 - words, prev >> bits);
+    if ((prev >> bits) != 0)
+        trailing_zero = u64_size() - words;
+
+    return trailing_zero;
 }
     
 void Val64::op_downshift(Val64 &v1, const Val64 &v2)
@@ -452,6 +465,63 @@ bool Val64::op_upshift(Val64 &v1, const Val64 &v2, size_t max_size)
     }
 
     return true;
+}
+
+size_t Val64::bitshift_up_small(size_t bits, bool &carry)
+{
+    le64 *vu64;
+    size_t vu64len;
+
+    assert(bits > 0);
+    assert(bits < 64);
+
+    vu64 = access_u64(&vu64len);
+
+    uint64_t prevbits = 0;
+    size_t trailing_zero = 0;
+    carry = false;
+
+    // [B, A] lshift 1 => [B<<1, A<<1 | B >> 63]
+    for (size_t i = 0; i < u64_size(); ++i) { 
+        uint64_t old_v = get(vu64, vu64len, i);
+        uint64_t new_v = (old_v << bits) | prevbits;
+
+        carry = !set(vu64, vu64len, i, new_v);
+        if (new_v != 0)
+            trailing_zero = i + 1;
+        prevbits = old_v >> (64 - bits);
+    }
+    // Either the set indicated we lost non-zero bits, or prevbits
+    // says we should carry.
+    if (prevbits != 0)
+        carry = true;
+
+    return trailing_zero;
+}
+
+void Val64::op_2mul(Val64 &v1)
+{
+    bool carry;
+    size_t trailing_zero;
+
+    trailing_zero = v1.bitshift_up_small(1, carry);
+
+    if (carry)
+        v1.m_charv.push_back(1);
+    else
+        v1.trim_u64(trailing_zero);
+}
+
+void Val64::op_2div(Val64 &v1)
+{
+    size_t trailing_zero;
+
+    // bitshift_down assumes non-zero size.
+    if (v1.u64_size() == 0)
+        return;
+
+    trailing_zero = v1.bitshift_down(0, 1);
+    v1.trim_u64(trailing_zero);
 }
 
 void Val64::op_invert(Val64 &v1)
