@@ -42,6 +42,9 @@ public:
     // Invert this to convert to boolean.
     bool is_zero() const;
 
+    // Returns -1 if this < v2, 0 if equal, 1 if this > v2.
+    int cmp(const Val64 &v2) const;
+
     // We use explicit names here, to show that these are *not* generic operations, but consensus constrained.
     static void op_add(Val64 &v1, Val64 &v2);
     static void op_1add(Val64 &v1);

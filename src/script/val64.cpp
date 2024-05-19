@@ -107,6 +107,26 @@ bool Val64::is_zero() const
     return to_u64_ceil(1) == 0;
 }
 
+int Val64::cmp(const Val64 &v2) const
+{
+    const le64 *v1u64, *v2u64;
+    size_t v1u64len, v2u64len;
+
+    v1u64 = access_u64(&v1u64len);
+    v2u64 = v2.access_u64(&v2u64len);
+
+    size_t maxlen = std::max(u64_size(), v2.u64_size());
+    for (ssize_t i = maxlen-1; i >= 0; --i) {
+        uint64_t iv1 = get(v1u64, v1u64len, i);
+        uint64_t iv2 = v2.get(v2u64, v2u64len, i);
+        if (iv1 < iv2)
+            return -1;
+        if (iv1 > iv2)
+            return 1;
+    }
+    return 0;
+}
+
 // if p not aligned: sets num_u64s to 0, returns NULL.
 // Otherwise, returns sets num_u64s to number of whole u64s, returns p.
 static const void *u64_aligned_len(void *vp, size_t len, bool force_unaligned,

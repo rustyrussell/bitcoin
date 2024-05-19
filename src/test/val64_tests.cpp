@@ -442,6 +442,69 @@ BOOST_AUTO_TEST_CASE(val64_sub)
     }
 }
 
+BOOST_AUTO_TEST_CASE(val64_cmp)
+{
+    for (bool unaligned: {false, true}) {
+        Val64Test::set_force_unaligned(unaligned);
+
+        for (size_t i = 0; i < 128; i++) {
+            for (size_t j = 0; j < 128; j++) {
+                std::vector<unsigned char> va = vec_setbit(i);
+                std::vector<unsigned char> vb = vec_setbit(j);
+                BOOST_TEST_MESSAGE("Cmp " << vector_to_string(va) << " vs " << vector_to_string(vb));
+
+                Val64 v64a(va);
+                Val64 v64b(vb);
+                int res = v64a.cmp(v64b);
+
+                int expected;
+                if (i == j)
+                    expected = 0;
+                else if (i > j)
+                    expected = 1;
+                else
+                    expected = -1;
+
+                BOOST_TEST_MESSAGE("Got " << res << " expected " << expected);
+
+                CHECK(res == expected);
+            }
+        }
+
+
+#ifdef USE_GMP
+        for (size_t i = 0; i < 1000; i++) {
+            size_t len1 = InsecureRandRange(50);
+            size_t len2 = InsecureRandRange(50);
+
+            std::vector<unsigned char> v1 =    g_insecure_rand_ctx.randbytes(len1);
+            std::vector<unsigned char> v2 =    g_insecure_rand_ctx.randbytes(len2);
+
+            BOOST_TEST_MESSAGE("Comparing " << vector_to_string(v1) << " vs " << vector_to_string(v2));
+
+            // GMP version
+            mpz_t mpz1, mpz2;
+            vector_to_mpz(v1, mpz1);
+            vector_to_mpz(v2, mpz2);
+            int expected = mpz_cmp(mpz1, mpz2);
+            // Documentation says negative, zero or positive.  Normalize!
+            if (expected > 0)
+                expected = 1;
+            else if (expected < 0)
+                expected = -1;
+            mpz_clears(mpz1, mpz2, NULL);
+
+            // Val64 version
+            Val64 v64_1(v1), v64_2(v2);
+
+            int cmp = v64_1.cmp(v64_2);
+
+            CHECK(cmp == expected);
+        }
+#endif
+    }
+}
+
 BOOST_AUTO_TEST_CASE(val64_upshift)
 {
     for (bool unaligned: {false, true}) {
