@@ -5,6 +5,7 @@
 #include <test/data/val64_conversion.json.h>
 #include <script/val64.h>
 #include <test/util/json.h>
+#include <test/util/random.h>
 #include <test/util/setup_common.h>
 #include <util/vector.h>
 
@@ -15,7 +16,36 @@
 
 BOOST_FIXTURE_TEST_SUITE(val64_tests, BasicTestingSetup)
 
-// A de-privatizing child.
+// Resize/create vector so this bit will fit
+static std::vector<unsigned char> vec_sized_for_bit(size_t bit,
+                                                    const std::vector<unsigned char> in = std::vector<unsigned char>())
+{
+    std::vector<unsigned char> v = in;
+    if (v.size() < (bit + 8) / 8)
+        v.resize((bit + 8) / 8);
+    return v;
+}
+
+// Set bit or create vector with this bit set.
+static std::vector<unsigned char> vec_setbit(size_t bit,
+                                             const std::vector<unsigned char> in = std::vector<unsigned char>())
+{
+    std::vector<unsigned char> v = vec_sized_for_bit(bit, in);
+    v[bit / 8] |= (1 << (bit % 8));
+    return v;
+}
+
+// Helper function to convert a vector to a string for printing (ChatGPT)
+template <typename T>
+std::string vector_to_string(const std::vector<T>& vec) {
+    std::ostringstream oss;
+    for (const auto& item : vec) {
+        oss << static_cast<int>(item) << " ";
+    }
+    return oss.str();
+}
+
+// A de-privatizing child.  Not efficient, as constructor copies, but convenient for testing.
 class Val64Test: public Val64 {
 public:
     // Unlike Val64, this makes a copy.
@@ -26,6 +56,7 @@ public:
     uint64_t get(size_t i) const { return Val64::non_access_get(i); }
     static void set_force_unaligned(bool val) { Val64::force_unaligned = val; }
 
+    bool non_access_set(size_t index, uint64_t v) { return Val64::non_access_set(index, v); }
     const uint64_t *access_u64(size_t *num) const { return Val64::access_u64(num); }
 
     std::vector<uint64_t> copy_vector() {
@@ -36,6 +67,41 @@ public:
         return v;
     }
 };    
+
+static Val64Test val64_singleton(uint64_t val)
+{
+    std::vector<unsigned char> bitvec(8);
+    Val64Test v(bitvec);
+    v.non_access_set(0, val);
+
+    return v;
+}
+
+#if USE_GMP
+#include <gmp.h>
+
+static void vector_to_mpz(const std::vector<unsigned char>& vec, mpz_t &num)
+{
+    mpz_init(num);
+    mpz_import(num, vec.size(), -1, sizeof(vec[0]), 0, 0, vec.data());
+}
+
+// Because mpz will trim zeroes, we might want to pad to len
+static std::vector<unsigned char> mpz_to_vector(const mpz_t &num, size_t len = -1)
+{
+    size_t count;
+    void *raw_data = mpz_export(nullptr, &count, -1, sizeof(uint8_t), 0, 0, num);
+    std::vector<unsigned char> vec(count);
+    memcpy(vec.data(), raw_data, count);
+    free(raw_data);
+
+    if (len != (size_t)-1) {
+        assert(vec.size() <= len);
+        vec.resize(len);
+    }
+    return vec;
+}
+#endif // USE_GMP
 
 // Boost unit test is terrible.
 #define I_KNOW_HOW_TO_USE_A_DEBUGGER
@@ -128,6 +194,105 @@ BOOST_AUTO_TEST_CASE(val64_unaligned)
     CHECK(v4.get(1) == 0x0000000000000009);
 
     Val64Test::set_force_unaligned(false);
+}
+
+BOOST_AUTO_TEST_CASE(val64_and_or_xor)
+{
+    for (bool unaligned: {false, true}) {
+        Val64Test::set_force_unaligned(unaligned);
+
+        for (size_t i = 0; i < 128; i++) {
+            for (size_t j = 0; j < 128; j++) {
+                std::vector<unsigned char> expected_and, expected_or, expected_xor;
+
+                expected_or = vec_setbit(j, vec_setbit(i, expected_or));
+                if (i != j) {
+                    expected_and = vec_sized_for_bit(i, vec_sized_for_bit(j));
+                    expected_xor = expected_or;
+                } else {
+                    expected_and = vec_setbit(i);
+                    expected_xor = vec_sized_for_bit(i);
+                }
+
+                // AND test
+                {
+                    Val64Test v64a(vec_setbit(i));
+                    Val64Test v64b(vec_setbit(j));
+                    Val64::op_and(v64a, v64b);
+                    CHECK(v64a.move_to_valtype() == expected_and);
+                }
+
+                // OR test
+                {
+                    Val64Test v64a(vec_setbit(i));
+                    Val64Test v64b(vec_setbit(j));
+                    Val64::op_or(v64a, v64b);
+                    CHECK(v64a.move_to_valtype() == expected_or);
+                }
+
+                // XOR test
+                {
+                    Val64Test v64a(vec_setbit(i));
+                    Val64Test v64b(vec_setbit(j));
+                    Val64::op_xor(v64a, v64b);
+                    CHECK(v64a.move_to_valtype() == expected_xor);
+                }
+            }
+        }
+
+
+#ifdef USE_GMP
+        for (size_t i = 0; i < 1000; i++) {
+            size_t len1 = InsecureRandRange(50);
+            size_t len2 = InsecureRandRange(50);
+
+            std::vector<unsigned char> v1 =    g_insecure_rand_ctx.randbytes(len1);
+            std::vector<unsigned char> v2 =    g_insecure_rand_ctx.randbytes(len2);
+
+            // GMP version
+            mpz_t mpz1, mpz2, mpz_result_and, mpz_result_or, mpz_result_xor;
+            vector_to_mpz(v1, mpz1);
+            vector_to_mpz(v2, mpz2);
+            mpz_init(mpz_result_and);
+            mpz_and(mpz_result_and, mpz1, mpz2);
+            mpz_init(mpz_result_or);
+            mpz_ior(mpz_result_or, mpz1, mpz2);
+            mpz_init(mpz_result_xor);
+            mpz_xor(mpz_result_xor, mpz1, mpz2);
+
+            // We preserve length.
+            size_t expected_len = std::max(len1, len2);
+            std::vector<uint8_t> expect_and = mpz_to_vector(mpz_result_and, expected_len);
+            std::vector<uint8_t> expect_or = mpz_to_vector(mpz_result_or, expected_len);
+            std::vector<uint8_t> expect_xor = mpz_to_vector(mpz_result_xor, expected_len);
+            mpz_clears(mpz1, mpz2, mpz_result_and, mpz_result_or, mpz_result_xor, NULL);
+
+            // AND
+            {
+                Val64Test v64a(v1);
+                Val64Test v64b(v2);
+                Val64::op_and(v64a, v64b);
+                CHECK(v64a.move_to_valtype() == expect_and);
+            }
+
+            // OR
+            {
+                Val64Test v64a(v1);
+                Val64Test v64b(v2);
+                Val64::op_or(v64a, v64b);
+                CHECK(v64a.move_to_valtype() == expect_or);
+            }
+
+            // XOR
+            {
+                Val64Test v64a(v1);
+                Val64Test v64b(v2);
+                Val64::op_xor(v64a, v64b);
+                CHECK(v64a.move_to_valtype() == expect_xor);
+            }
+        }
+#endif
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
