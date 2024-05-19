@@ -441,4 +441,121 @@ BOOST_AUTO_TEST_CASE(val64_sub)
     }
 }
 
+BOOST_AUTO_TEST_CASE(val64_upshift)
+{
+    for (bool unaligned: {false, true}) {
+        Val64Test::set_force_unaligned(unaligned);
+
+        for (size_t i = 0; i < 128; i++) {
+            for (size_t j = 0; j < 128; j++) {
+                std::vector<unsigned char> va = vec_setbit(i);
+                BOOST_TEST_MESSAGE("Upshift " << vector_to_string(va) << " by " << j);
+
+                Val64 v64a(va);
+                bool ok = Val64::op_upshift(v64a, val64_singleton(j), 1000);
+                assert(ok);
+                va = v64a.move_to_valtype();
+
+                std::vector<unsigned char> expected = vec_setbit(i + j);
+                // Definitionally, upshift inserts an extra (j + 7) / 8 bytes.
+                expected.resize(1 + i / 8 + (j + 7) / 8);
+
+                BOOST_TEST_MESSAGE("Got " << vector_to_string(va) << " expected " << vector_to_string(expected));
+
+                CHECK(va == expected);
+            }
+        }
+
+
+#ifdef USE_GMP
+        for (size_t i = 0; i < 1000; i++) {
+            size_t len1 = InsecureRandRange(500);
+            size_t sbits = InsecureRandRange(500 * 8);
+
+            std::vector<unsigned char> v1 =    g_insecure_rand_ctx.randbytes(len1);
+
+            BOOST_TEST_MESSAGE("Left shifting " << vector_to_string(v1) << " by " << sbits);
+
+            // GMP version
+            mpz_t mpz1, mpz_result;
+            vector_to_mpz(v1, mpz1);
+            mpz_init(mpz_result);
+            mpz_mul_2exp(mpz_result, mpz1, sbits);
+
+            // Always leaves trailing zeroes
+            std::vector<uint8_t> expect = mpz_to_vector(mpz_result, len1 + sbits / 8 + (sbits % 8 ? 1 : 0));
+            mpz_clears(mpz1, mpz_result, NULL);
+
+            // Val64 version
+            Val64 v64(v1);
+            bool ok = Val64::op_upshift(v64, val64_singleton(sbits), 5000);
+            assert(ok);
+            v1 = v64.move_to_valtype();
+
+            CHECK(v1 == expect);
+        }
+#endif
+    }
+}
+
+BOOST_AUTO_TEST_CASE(val64_downshift)
+{
+    for (bool unaligned: {false, true}) {
+        Val64Test::set_force_unaligned(unaligned);
+
+        for (size_t i = 0; i < 128; i++) {
+            for (size_t j = 0; j < 128; j++) {
+                std::vector<unsigned char> va = vec_setbit(i);
+                BOOST_TEST_MESSAGE("Downshift " << vector_to_string(va) << " by " << j);
+
+                assert(va.size() == (i + 8) / 8);
+                Val64 v64a(va);
+                Val64::op_downshift(v64a, val64_singleton(j));
+                va = v64a.move_to_valtype();
+
+                std::vector<unsigned char> expected;
+                if (j <= i)
+                    expected = vec_setbit(i - j);
+
+                // Definitionally, downshift only removes one byte for every 8 bits shifted.
+                if (j / 8 <= (i + 8) / 8) 
+                    expected.resize((i + 8) / 8 - j / 8);
+
+                BOOST_TEST_MESSAGE("Got " << vector_to_string(va) << " expected " << vector_to_string(expected));
+
+                CHECK(va == expected);
+            }
+        }
+
+
+#ifdef USE_GMP
+        for (size_t i = 0; i < 1000; i++) {
+            size_t len1 = InsecureRandRange(500);
+            size_t sbits = InsecureRandRange(500 * 8);
+
+            std::vector<unsigned char> v1 =    g_insecure_rand_ctx.randbytes(len1);
+
+            BOOST_TEST_MESSAGE("Right shifting " << vector_to_string(v1) << " by " << sbits);
+
+            // GMP version
+            mpz_t mpz1, mpz_result;
+            vector_to_mpz(v1, mpz1);
+            mpz_init(mpz_result);
+            mpz_fdiv_q_2exp(mpz_result, mpz1, sbits);
+
+            // We subtract only whole bytes from length.
+            std::vector<uint8_t> expect = mpz_to_vector(mpz_result, v1.size() > sbits / 8 ? v1.size() - sbits / 8 : 0);
+            mpz_clears(mpz1, mpz_result, NULL);
+
+            // Val64 version
+            Val64 v64(v1);
+            Val64::op_downshift(v64, val64_singleton(sbits));
+            v1 = v64.move_to_valtype();
+
+            CHECK(v1 == expect);
+        }
+#endif
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

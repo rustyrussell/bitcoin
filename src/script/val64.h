@@ -102,6 +102,9 @@ protected:
     // Swap v1 and v2 so v1 is always longer or same size than v2.
     static void binop_v1_longest(Val64 &v1, Val64 &v2);
 
+    // Right shift by this many words, and this many bits (1-63 incl).
+    void bitshift_down(size_t words, size_t bits);
+
     // Test helpers
     static bool force_unaligned;
 };

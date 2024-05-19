@@ -29,6 +29,141 @@ static size_t bench_size(const char *varname = "VAL64_BENCH_BYTES")
 	return atol(env);
 }
 
+static void lshift_bench(benchmark::Bench& bench, size_t bits)
+{
+    Val64 *v641[MAX_ITERS];
+    size_t vecsize = bench_size(), maxsize = vecsize + bits / 8 + 1;
+
+    // Turn bits into a vector array.
+    Val64 v2(bits);
+
+    for (size_t i = 0; i < MAX_ITERS; i++) {
+        std::vector<unsigned char> v1(vecsize, 128);
+        v641[i] = new Val64(v1);
+    }
+
+    size_t n = 0;
+    bench.run([&] {
+        bool ok = Val64::op_upshift(*v641[n++], v2, maxsize);
+        assert(ok);
+        assert(n < MAX_ITERS);
+    });
+}
+
+static void Val64LShiftOneMisalign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(true);
+
+    lshift_bench(bench, 1);
+}
+
+static void Val64LShiftOneAlign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(false);
+
+    lshift_bench(bench, 1);
+}
+
+static void naive_lshift(std::vector<unsigned char> &v1)
+{
+    v1.resize(v1.size() + 1);
+    for (size_t i = 1; i < v1.size(); i++) {
+        v1[i] = ((v1[i-1] >> (8 - 1)) | (v1[i] << 1));
+    }
+    v1[0] <<= 1;
+}
+
+static void Val64LShiftOneNaive(benchmark::Bench& bench)
+{
+    std::vector<unsigned char> v1(bench_size(), 1);
+
+    bench.run([&] {
+        naive_lshift(v1);
+    });
+}
+
+static void Val64LShift(benchmark::Bench& bench)
+{
+    size_t bits = 65;
+	const char *env = getenv("VAL64_SHIFT_BITS");
+	if (env)
+        bits = atol(env);
+
+    lshift_bench(bench, bits);
+}
+
+BENCHMARK(Val64LShiftOneMisalign, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64LShiftOneAlign, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64LShiftOneNaive, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64LShift, benchmark::PriorityLevel::LOW);
+
+static void rshift_bench(benchmark::Bench& bench, size_t bits)
+{
+    Val64 *v641[MAX_ITERS];
+
+    // Turn bits into a vector array.
+    Val64 v2(bits);
+    
+    for (size_t i = 0; i < MAX_ITERS; i++) {
+        std::vector<unsigned char> v1(bench_size(), 128);
+        v641[i] = new Val64(v1);
+    }
+
+    size_t n = 0;
+    bench.run([&] {
+        Val64::op_downshift(*v641[n++], v2);
+        assert(n < MAX_ITERS);
+    });
+}
+
+static void Val64RShiftMisalign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(true);
+
+    rshift_bench(bench, 1);
+}
+
+static void Val64RShiftAlign(benchmark::Bench& bench)
+{
+    Val64Test::set_force_unaligned(false);
+
+    rshift_bench(bench, 1);
+}
+
+static void naive_rshift(std::vector<unsigned char> &v1)
+{
+    unsigned char carry = 0;
+    for (auto it = v1.rbegin(); it != v1.rend(); ++it) {
+        unsigned char next_carry = *it & 1;
+        *it = (*it >> 1) | (carry << 7);
+        carry = next_carry;
+    }
+}
+
+static void Val64RShiftNaive(benchmark::Bench& bench)
+{
+    std::vector<unsigned char> v1(bench_size(), 1);
+
+    bench.run([&] {
+        naive_rshift(v1);
+    });
+}
+
+static void Val64RShift(benchmark::Bench& bench)
+{
+    size_t bits = 65;
+	const char *env = getenv("VAL64_SHIFT_BITS");
+	if (env)
+        bits = atol(env);
+
+    rshift_bench(bench, bits);
+}
+
+BENCHMARK(Val64RShiftMisalign, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64RShiftAlign, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64RShiftNaive, benchmark::PriorityLevel::LOW);
+BENCHMARK(Val64RShift, benchmark::PriorityLevel::LOW);
+
 // This grows a little over time, but that's noise.
 static void add_bench(benchmark::Bench& bench)
 {

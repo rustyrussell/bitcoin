@@ -304,6 +304,85 @@ size_t Val64::u64_size() const
     return (m_charv.size() + sizeof(uint64_t) - 1) / sizeof(uint64_t);
 }
 
+void Val64::bitshift_down(size_t words, size_t bits)
+{
+    le64 *vu64;
+    size_t vu64len;
+
+    assert(bits > 0);
+    assert(bits < 64);
+
+    vu64 = access_u64(&vu64len);
+
+    // [B, A] rshift 1 => [B>>1 | A>>63, A << 1]
+    uint64_t prev = get(vu64, vu64len, words);
+    for (size_t i = words; i < u64_size() - 1; ++i) {
+        uint64_t next = get(vu64, vu64len, i + 1);
+        set(vu64, vu64len, i - words, (prev >> bits) | (next << (64 - bits)));
+        prev = next;
+    }
+    // Shift the last word
+    set(vu64, vu64len, u64_size() - 1 - words, prev >> bits);
+}
+    
+void Val64::op_downshift(Val64 &v1, const Val64 &v2)
+{
+    uint64_t bits = v2.to_u64_ceil(v1.m_charv.size() * 8);
+    size_t bytes = bits / 8;
+
+    // Shift past end?  Empty.  Also covers empty array.
+    if (bytes >= v1.m_charv.size()) {
+        v1.m_charv.resize(0);
+        return;
+    }
+
+    // Bitwise shifts can't do 0 anyway, as << 64 undefined.
+    // And we might as well do erase here if we can.
+    if (bits % 8 == 0) {
+        // Remove least-significant words.
+        v1.m_charv.erase(v1.m_charv.begin(),
+                         v1.m_charv.begin() + bytes);
+        return;
+    }
+
+    // Size after this is at least 1!
+    assert(v1.u64_size() > 0);
+
+    // We shift and move at the same time.
+    v1.bitshift_down(bits / 64, bits % 64);
+
+    // Truncate.
+    v1.m_charv.resize(v1.m_charv.size() - bytes);
+}
+
+// This means "shift bits higher": number go up!
+bool Val64::op_upshift(Val64 &v1, const Val64 &v2, size_t max_size)
+{
+    // BIP#ops: If the sum of BITS plus 8 times the length of A is greater than
+    // 520,000 x 8, fail.    
+    uint64_t bits = v2.to_u64_ceil(max_size * 8 + 1);
+
+    // Cannot overflow: size() is (far) less than 32 bits, so is max_size.
+    if (bits + v1.m_charv.size() * 8 > max_size * 8)
+        return false;
+
+    // How many whole bytes should we prepend?
+    size_t prebytes = bits / 8;
+
+    if (bits % 8 == 0) {
+        // Simply insert bytes at the beginning.
+        v1.m_charv.insert(v1.m_charv.begin(), prebytes, 0);
+    } else {
+        // There's no nice C++ "add this many bytes at the beginning,
+        // and one at the end" so we are actually best off prepending too
+        // many bytes (fast!) and shifting backwards.
+        v1.m_charv.insert(v1.m_charv.begin(), prebytes + 1, 0);
+        v1.bitshift_down(0, 8 - (bits % 8));
+    }
+
+    return true;
+}
+
 void Val64::op_invert(Val64 &v1)
 {
     le64 *vu64;
