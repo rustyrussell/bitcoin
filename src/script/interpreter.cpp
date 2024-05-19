@@ -721,7 +721,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                 {
                     if (stack.size() < 1)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    altstack.push_back(stacktop(-1));
+                    altstack.push_back(std::move(stacktop(-1)));
                     popstack(stack);
                 }
                 break;
@@ -730,7 +730,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                 {
                     if (altstack.size() < 1)
                         return set_error(serror, SCRIPT_ERR_INVALID_ALTSTACK_OPERATION);
-                    stack.push_back(altstacktop(-1));
+                    stack.push_back(std::move(altstacktop(-1)));
                     popstack(altstack);
                 }
                 break;
@@ -750,8 +750,8 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // (x1 x2 -- x1 x2 x1 x2)
                     if (stack.size() < 2)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    valtype vch1 = stacktop(-2);
-                    valtype vch2 = stacktop(-1);
+                    const valtype &vch1 = stacktop(-2);
+                    const valtype &vch2 = stacktop(-1);
                     stack.push_back(vch1);
                     stack.push_back(vch2);
                 }
@@ -762,9 +762,9 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // (x1 x2 x3 -- x1 x2 x3 x1 x2 x3)
                     if (stack.size() < 3)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    valtype vch1 = stacktop(-3);
-                    valtype vch2 = stacktop(-2);
-                    valtype vch3 = stacktop(-1);
+                    const valtype &vch1 = stacktop(-3);
+                    const valtype &vch2 = stacktop(-2);
+                    const valtype &vch3 = stacktop(-1);
                     stack.push_back(vch1);
                     stack.push_back(vch2);
                     stack.push_back(vch3);
@@ -776,8 +776,8 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // (x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2)
                     if (stack.size() < 4)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    valtype vch1 = stacktop(-4);
-                    valtype vch2 = stacktop(-3);
+                    const valtype &vch1 = stacktop(-4);
+                    const valtype &vch2 = stacktop(-3);
                     stack.push_back(vch1);
                     stack.push_back(vch2);
                 }
@@ -788,11 +788,8 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // (x1 x2 x3 x4 x5 x6 -- x3 x4 x5 x6 x1 x2)
                     if (stack.size() < 6)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    valtype vch1 = stacktop(-6);
-                    valtype vch2 = stacktop(-5);
-                    stack.erase(stack.end()-6, stack.end()-4);
-                    stack.push_back(vch1);
-                    stack.push_back(vch2);
+                    // rotate start, newstart, end.
+                    std::rotate(stack.end()-6, stack.end()-4, stack.end());
                 }
                 break;
 
@@ -811,7 +808,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // (x - 0 | x x)
                     if (stack.size() < 1)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    valtype vch = stacktop(-1);
+                    valtype &vch = stacktop(-1);
                     bool result;
                     if (sigversion == SigVersion::TAPSCRIPT_V2) {
                         result = Val64(vch).to_u64_ceil(1);
@@ -871,7 +868,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // (x1 x2 -- x1 x2 x1)
                     if (stack.size() < 2)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    valtype vch = stacktop(-2);
+                    const valtype &vch = stacktop(-2);
                     stack.push_back(vch);
                 }
                 break;
@@ -927,7 +924,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // (x1 x2 -- x2 x1 x2)
                     if (stack.size() < 2)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    valtype vch = stacktop(-1);
+                    const valtype &vch = stacktop(-1);
                     stack.insert(stack.end()-2, vch);
                 }
                 break;
