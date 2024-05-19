@@ -31,6 +31,7 @@ bench_bench_bitcoin_SOURCES = \
   bench/disconnected_transactions.cpp \
   bench/duplicate_inputs.cpp \
   bench/ellswift.cpp \
+  bench/evalscript.cpp \
   bench/examples.cpp \
   bench/gcs_filter.cpp \
   bench/hashpadding.cpp \
