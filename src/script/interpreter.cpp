@@ -422,6 +422,19 @@ static void push64(std::vector<std::vector<unsigned char> >& stack, Val64 &v)
     stack.push_back(vch);
 }
 
+static size_t total_stack_size(const std::vector<std::vector<unsigned char> >& stack,
+                               size_t &max_size)
+{
+    size_t total = 0;
+
+    for (const auto& v : stack) {
+        total += v.size();
+        if (v.size() > max_size)
+            max_size = v.size();
+    }
+    return total;
+}
+    
 bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptExecutionData& execdata, ScriptError* serror)
 {
     static const CScriptNum bnZero(0);
@@ -1549,6 +1562,17 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
             // Size limits
             if (stack.size() + altstack.size() > MAX_STACK_SIZE)
                 return set_error(serror, SCRIPT_ERR_STACK_SIZE);
+
+            // This is impossible to violate prior to tapscript v2.
+            size_t max_size = 0;
+            if (total_stack_size(stack, max_size) +
+                total_stack_size(altstack, max_size) > MAX_TAPSCRIPT_V2_TOTAL_STACK_SIZE) {
+                return set_error(serror, SCRIPT_ERR_STACK_SIZE);
+            }
+
+            // Note: with all ops so far, violator would have to be top of stack
+            if (max_size > MAX_TAPSCRIPT_V2_STACK_ELEMENT_SIZE)
+                return set_error(serror, SCRIPT_ERR_STACK_SIZE);
         }
     }
     catch (...)
@@ -2136,13 +2160,17 @@ static bool ExecuteWitnessScript(const Span<const valtype>& stack_span, const CS
             }
         }
 
-        // Tapscript enforces initial stack size limits (altstack is empty here)
-        if (stack.size() > MAX_STACK_SIZE) return set_error(serror, SCRIPT_ERR_STACK_SIZE);
+        // Tapscript v1 enforces initial stack size limits (altstack is empty here)
+        if (sigversion != SigVersion::TAPSCRIPT_V2) {
+            if (stack.size() > MAX_STACK_SIZE) return set_error(serror, SCRIPT_ERR_STACK_SIZE);
+        }
     }
 
-    // Disallow stack item size > MAX_SCRIPT_ELEMENT_SIZE in witness stack
-    for (const valtype& elem : stack) {
-        if (elem.size() > MAX_SCRIPT_ELEMENT_SIZE) return set_error(serror, SCRIPT_ERR_PUSH_SIZE);
+    if (sigversion != SigVersion::TAPSCRIPT_V2) {
+        // Disallow stack item size > MAX_SCRIPT_ELEMENT_SIZE in witness stack
+        for (const valtype& elem : stack) {
+            if (elem.size() > MAX_SCRIPT_ELEMENT_SIZE) return set_error(serror, SCRIPT_ERR_PUSH_SIZE);
+        }
     }
 
     // Run the script interpreter.
