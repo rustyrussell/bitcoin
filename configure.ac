@@ -1350,6 +1350,16 @@ if test "$build_bitcoind$bitcoin_enable_qt$use_bench$use_tests" = "nononono"; th
   use_zmq=no
 fi
 
+if test "$use_tests" = "yes"; then
+  AC_CHECK_LIB([gmp], [__gmpz_init], [use_gmp=yes], [use_gmp=no])
+else
+  use_gmp=no
+fi
+
+if test "$use_gmp" = yes; then
+    AC_DEFINE([USE_GMP], [1], [Define for tests to use libgmp])
+fi
+
 dnl Check for libminiupnpc (optional)
 if test "$use_upnp" != "no"; then
   TEMP_CPPFLAGS="$CPPFLAGS"
@@ -1794,6 +1804,7 @@ AM_CONDITIONAL([ENABLE_ARM_SHANI], [test "$enable_arm_shani" = "yes"])
 AM_CONDITIONAL([WORDS_BIGENDIAN], [test "$ac_cv_c_bigendian" = "yes"])
 AM_CONDITIONAL([USE_NATPMP], [test "$use_natpmp" = "yes"])
 AM_CONDITIONAL([USE_UPNP], [test "$use_upnp" = "yes"])
+AM_CONDITIONAL([USE_GMP], [test "$use_gmp" = "yes"])
 
 dnl for minisketch
 AM_CONDITIONAL([ENABLE_CLMUL], [test "$enable_clmul" = "yes"])
