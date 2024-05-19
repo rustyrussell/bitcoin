@@ -116,6 +116,9 @@ protected:
     // carry set to true iff we had overflow.
     size_t bitshift_up_small(size_t bits, bool &carry);
 
+    // (*this) cmp (v2 << shift_words*64)
+    int cmp_with_offset(const Val64 &v2, size_t shift_words) const;
+    
     // Addition within *this at word offset (for multiply).
     size_t add_at_offset(const Val64 &v1, size_t off);
 

@@ -107,7 +107,7 @@ bool Val64::is_zero() const
     return to_u64_ceil(1) == 0;
 }
 
-int Val64::cmp(const Val64 &v2) const
+int Val64::cmp_with_offset(const Val64 &v2, size_t shift_words) const
 {
     const le64 *v1u64, *v2u64;
     size_t v1u64len, v2u64len;
@@ -115,16 +115,21 @@ int Val64::cmp(const Val64 &v2) const
     v1u64 = access_u64(&v1u64len);
     v2u64 = v2.access_u64(&v2u64len);
 
-    size_t maxlen = std::max(u64_size(), v2.u64_size());
+    size_t maxlen = std::max(u64_size(), v2.u64_size() + shift_words);
     for (ssize_t i = maxlen-1; i >= 0; --i) {
         uint64_t iv1 = get(v1u64, v1u64len, i);
-        uint64_t iv2 = v2.get(v2u64, v2u64len, i);
+        uint64_t iv2 = size_t(i) < shift_words ? 0 : v2.get(v2u64, v2u64len, i - shift_words);
         if (iv1 < iv2)
             return -1;
         if (iv1 > iv2)
             return 1;
     }
     return 0;
+}
+
+int Val64::cmp(const Val64 &v2) const
+{
+    return cmp_with_offset(v2, 0);
 }
 
 // if p not aligned: sets num_u64s to 0, returns NULL.

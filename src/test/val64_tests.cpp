@@ -60,6 +60,7 @@ public:
     const uint64_t *access_u64(size_t *num) const { return Val64::access_u64(num); }
     void mul_vector(Val64 &res, uint64_t mul) const { return Val64::mul_vector(res, mul); }
     size_t add_at_offset(const Val64 &v1, size_t off) { return Val64::add_at_offset(v1, off); }
+    int cmp_with_offset(const Val64 &v1, size_t off) { return Val64::cmp_with_offset(v1, off); }
     std::vector<uint64_t> copy_vector() {
         std::vector<uint64_t> v;
         for (size_t i = 0; i < u64_size(); i++) {
@@ -476,16 +477,19 @@ BOOST_AUTO_TEST_CASE(val64_cmp)
         for (size_t i = 0; i < 1000; i++) {
             size_t len1 = InsecureRandRange(50);
             size_t len2 = InsecureRandRange(50);
+            size_t shift_words = InsecureRandRange(3);
 
             std::vector<unsigned char> v1 =    g_insecure_rand_ctx.randbytes(len1);
             std::vector<unsigned char> v2 =    g_insecure_rand_ctx.randbytes(len2);
 
-            BOOST_TEST_MESSAGE("Comparing " << vector_to_string(v1) << " vs " << vector_to_string(v2));
+            BOOST_TEST_MESSAGE("Comparing " << vector_to_string(v1) << " vs " << vector_to_string(v2) << " upshifted " << shift_words * 64);
 
             // GMP version
             mpz_t mpz1, mpz2;
             vector_to_mpz(v1, mpz1);
             vector_to_mpz(v2, mpz2);
+            mpz_mul_2exp(mpz2, mpz2, shift_words * 64);
+
             int expected = mpz_cmp(mpz1, mpz2);
             // Documentation says negative, zero or positive.  Normalize!
             if (expected > 0)
@@ -495,9 +499,9 @@ BOOST_AUTO_TEST_CASE(val64_cmp)
             mpz_clears(mpz1, mpz2, NULL);
 
             // Val64 version
-            Val64 v64_1(v1), v64_2(v2);
+            Val64Test v64_1(v1), v64_2(v2);
 
-            int cmp = v64_1.cmp(v64_2);
+            int cmp = v64_1.cmp_with_offset(v64_2, shift_words);
 
             CHECK(cmp == expected);
         }
