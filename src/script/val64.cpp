@@ -81,11 +81,14 @@ std::vector<unsigned char> Val64::move_to_valtype()
     return std::move(m_charv);
 }
 
-uint64_t Val64::to_u64_ceil(size_t max) const
+uint64_t Val64::to_u64_ceil(size_t max, size_t &varcost) const
 {
     const le64 *vu64;
     size_t vu64len;
     uint64_t v;
+
+    // Worst case, we have to examine all bytes.
+    varcost += m_charv.size();
 
     vu64 = access_u64(&vu64len);
 
@@ -103,9 +106,9 @@ uint64_t Val64::to_u64_ceil(size_t max) const
     return v;
 }
 
-bool Val64::is_zero() const
+bool Val64::is_zero(size_t &varcost) const
 {
-    return to_u64_ceil(1) == 0;
+    return to_u64_ceil(1, varcost) == 0;
 }
 
 int Val64::cmp_with_offset(const Val64 &v2, size_t shift_words) const
@@ -128,8 +131,11 @@ int Val64::cmp_with_offset(const Val64 &v2, size_t shift_words) const
     return 0;
 }
 
-int Val64::cmp(const Val64 &v2) const
+int Val64::cmp(const Val64 &v2, size_t &varcost) const
 {
+    // Worst case examination is both lengths
+    varcost += m_charv.size() + v2.m_charv.size();
+
     return cmp_with_offset(v2, 0);
 }
 
@@ -282,8 +288,13 @@ size_t Val64::add_with_offset(const Val64 &v1, size_t shift_words, bool &carry)
     return trailing_zero;
 }
     
-void Val64::op_add(Val64 &v1, Val64 &v2)
+void Val64::op_add(Val64 &v1, Val64 &v2, size_t &varcost)
 {
+    // BIP#ops:
+    // |OP_ADD
+    // |Lesser of two operand lengths + (greater of two operand lengths) * 3
+    varcost += v2.m_charv.size() + v1.m_charv.size() * 3;
+
     binop_v1_longest(v1, v2);
 
     bool carry;
@@ -295,11 +306,14 @@ void Val64::op_add(Val64 &v1, Val64 &v2)
         v1.trim_u64(trailing_zero);
 }
 
-void Val64::op_1add(Val64 &v1)
+void Val64::op_1add(Val64 &v1, size_t &varcost)
 {
     Val64 v2(1);
 
-    op_add(v1, v2);
+    // BIP#ops:
+    // |OP_1ADD
+    // |1 + Operand length * 3
+    op_add(v1, v2, varcost);
 }
 
 // *this -= v1 << shift_words*64
@@ -343,8 +357,13 @@ size_t Val64::sub_with_offset(const Val64 &v1, size_t shift_words, bool &underfl
     return trailing_zero;
 }
 
-bool Val64::op_sub(Val64 &v1, const Val64 &v2)
+bool Val64::op_sub(Val64 &v1, const Val64 &v2, size_t &varcost)
 {
+    // BIP#ops:
+    // |OP_SUB
+    // |Sum of two operand lengths
+    varcost += v1.m_charv.size() + v2.m_charv.size();
+
     bool underflow;
     size_t trailing_zero = v1.sub_with_offset(v2, 0, underflow);
 
@@ -355,11 +374,11 @@ bool Val64::op_sub(Val64 &v1, const Val64 &v2)
     return true;
 }
 
-bool Val64::op_1sub(Val64 &v1)
+bool Val64::op_1sub(Val64 &v1, size_t &varcost)
 {
     const Val64 v2(1);
 
-    return op_sub(v1, v2);
+    return op_sub(v1, v2, varcost);
 }
 
 // 0 -> 0
@@ -404,16 +423,25 @@ size_t Val64::bitshift_down(size_t words, size_t bits)
     return trailing_zero;
 }
     
-void Val64::op_downshift(Val64 &v1, const Val64 &v2)
+void Val64::op_downshift(Val64 &v1, const Val64 &v2, size_t &varcost)
 {
-    uint64_t bits = v2.to_u64_ceil(v1.m_charv.size() * 8);
+    uint64_t bits = v2.to_u64_ceil(v1.m_charv.size() * 8, varcost);
     size_t bytes = bits / 8;
 
+    // BIP#ops:
+    // |OP_DOWNSHIFT
+    // |Length of BITS + MAX((Length of A - (Value of BITS) / 8), 0) * 2.
+
+    // We already added length of BITS in to_u64_ceil above.
+    
     // Shift past end?  Empty.  Also covers empty array.
     if (bytes >= v1.m_charv.size()) {
         v1.m_charv.resize(0);
         return;
     }
+
+    // (Length of A - (Value of BITS) / 8) > 0.
+    varcost += (v1.m_charv.size() - bytes) * 2;
 
     // Bitwise shifts can't do 0 anyway, as << 64 undefined.
     // And we might as well do erase here if we can.
@@ -435,11 +463,11 @@ void Val64::op_downshift(Val64 &v1, const Val64 &v2)
 }
 
 // This means "shift bits higher": number go up!
-bool Val64::op_upshift(Val64 &v1, const Val64 &v2, size_t max_size)
+bool Val64::op_upshift(Val64 &v1, const Val64 &v2, size_t max_size, size_t &varcost)
 {
     // BIP#ops: If the sum of BITS plus 8 times the length of A is greater than
     // 520,000 x 8, fail.    
-    uint64_t bits = v2.to_u64_ceil(max_size * 8 + 1);
+    uint64_t bits = v2.to_u64_ceil(max_size * 8 + 1, varcost);
 
     // Cannot overflow: size() is (far) less than 32 bits, so is max_size.
     if (bits + v1.m_charv.size() * 8 > max_size * 8)
@@ -448,15 +476,23 @@ bool Val64::op_upshift(Val64 &v1, const Val64 &v2, size_t max_size)
     // How many whole bytes should we prepend?
     size_t prebytes = bits / 8;
 
+    // BIP#ops:
+    // |OP_UPSHIFT
+    // |Length of BITS + (Value of BITS) / 8.
+    // If BITS % 8 == 0, add (Length of A) * 2, otherwise add (Length of A) * 3.
+    varcost += prebytes;
+    
     if (bits % 8 == 0) {
         // Simply insert bytes at the beginning.
         v1.m_charv.insert(v1.m_charv.begin(), prebytes, 0);
+        varcost += v1.m_charv.size() * 2;
     } else {
         // There's no nice C++ "add this many bytes at the beginning,
         // and one at the end" so we are actually best off prepending too
         // many bytes (fast!) and shifting backwards.
         v1.m_charv.insert(v1.m_charv.begin(), prebytes + 1, 0);
         v1.bitshift_down(0, 8 - (bits % 8));
+        varcost += v1.m_charv.size() * 3;
     }
 
     return true;
@@ -494,11 +530,16 @@ size_t Val64::bitshift_up_small(size_t bits, bool &carry)
     return trailing_zero;
 }
 
-void Val64::op_2mul(Val64 &v1)
+void Val64::op_2mul(Val64 &v1, size_t &varcost)
 {
     bool carry;
     size_t trailing_zero;
 
+    // BIP#ops:
+    // |OP_2MUL
+    // |Operand length x 3
+    varcost += v1.m_charv.size() * 3;
+    
     trailing_zero = v1.bitshift_up_small(1, carry);
 
     if (carry)
@@ -507,10 +548,15 @@ void Val64::op_2mul(Val64 &v1)
         v1.trim_u64(trailing_zero);
 }
 
-void Val64::op_2div(Val64 &v1)
+void Val64::op_2div(Val64 &v1, size_t &varcost)
 {
     size_t trailing_zero;
 
+    // BIP#ops:
+    // |OP_2DIV
+    // |Operand length
+    varcost += v1.m_charv.size();
+    
     // bitshift_down assumes non-zero size.
     if (v1.u64_size() == 0)
         return;
@@ -519,10 +565,15 @@ void Val64::op_2div(Val64 &v1)
     v1.trim_u64(trailing_zero);
 }
 
-void Val64::op_invert(Val64 &v1)
+void Val64::op_invert(Val64 &v1, size_t &varcost)
 {
     le64 *vu64;
     size_t vu64len;
+
+    // BIP#ops:
+    // |OP_INVERT
+    // |Length of operand
+    varcost += v1.m_charv.size();
 
     vu64 = v1.access_u64(&vu64len);
     for (size_t i = 0; i < v1.u64_size(); ++i) {
@@ -538,13 +589,18 @@ void Val64::binop_v1_longest(Val64 &v1, Val64 &v2)
         v1.swap(v2);
 }
     
-void Val64::op_and(Val64 &v1, Val64 &v2)
+void Val64::op_and(Val64 &v1, Val64 &v2, size_t &varcost)
 {
     le64 *v1u64;
     const le64 *v2u64;
     size_t v1u64len, v2u64len;
 
     binop_v1_longest(v1, v2);
+
+    // BIP#ops:
+    // |OP_AND
+    // |Sum of two operand lengths
+    varcost += v1.m_charv.size() + v2.m_charv.size();
 
     v1u64 = v1.access_u64(&v1u64len);
     v2u64 = v2.access_u64(&v2u64len);
@@ -555,13 +611,18 @@ void Val64::op_and(Val64 &v1, Val64 &v2)
     }
 }
 
-void Val64::op_or(Val64 &v1, Val64 &v2)
+void Val64::op_or(Val64 &v1, Val64 &v2, size_t &varcost)
 {
     le64 *v1u64;
     const le64 *v2u64;
     size_t v1u64len, v2u64len;
 
     binop_v1_longest(v1, v2);
+
+    // BIP#ops:
+    // |OP_XOR
+    // |(Lesser of the two operand lengths) x 2
+    varcost += v2.m_charv.size() * 2;
 
     v1u64 = v1.access_u64(&v1u64len);
     v2u64 = v2.access_u64(&v2u64len);
@@ -572,13 +633,18 @@ void Val64::op_or(Val64 &v1, Val64 &v2)
     }
 }
 
-void Val64::op_xor(Val64 &v1, Val64 &v2)
+void Val64::op_xor(Val64 &v1, Val64 &v2, size_t &varcost)
 {
     le64 *v1u64;
     const le64 *v2u64;
     size_t v1u64len, v2u64len;
 
     binop_v1_longest(v1, v2);
+
+    // BIP#ops:
+    // |OP_OR
+    // |(Lesser of the two operand lengths) x 2
+    varcost += v2.m_charv.size() * 2;
 
     v1u64 = v1.access_u64(&v1u64len);
     v2u64 = v2.access_u64(&v2u64len);
@@ -704,8 +770,9 @@ bool Val64::div_mod(Val64 &v1, Val64 &v2, divmod_op op)
     // In theory, we could save this cost by doing shifting as we go.
     // But this shift isn't really the main overhead, so keep it simple.
     if (k != 0) {
-        op_upshift(v1, Val64(k), v1.m_charv.size() + 8);
-        op_upshift(v2, Val64(k), v2.m_charv.size() + 8);
+        size_t varcost;
+        op_upshift(v1, Val64(k), v1.m_charv.size() + 8, varcost);
+        op_upshift(v2, Val64(k), v2.m_charv.size() + 8, varcost);
     }
 
     // Shift can add a few zero bytes, re-normalize.
@@ -847,4 +914,32 @@ bool Val64::op_div(Val64 &v1, Val64 &v2)
 bool Val64::op_mod(Val64 &v1, Val64 &v2)
 {
     return div_mod(v1, v2, divmod_op::VAL64_MOD);
+}
+
+size_t Val64::op_mul_varcost(const Val64 &v1, const Val64 &v2)
+{
+    // BIP#ops:
+    // |OP_MUL
+    // |Sum of operand lengths + (length(A) / 8 *rounded up*) x (length(B) + 1) x 2
+    return v1.m_charv.size() + v2.m_charv.size() + (v1.m_charv.size() + 7) / 8 + (v2.m_charv.size() + 1);
+}
+
+size_t Val64::op_div_varcost(const Val64 &v1, const Val64 &v2)
+{
+    // BIP#ops:
+    // |OP_DIV
+    // |length(A) x 9 + length(B) x 3 + 25 x length(A)^2 / 128
+    return v1.m_charv.size() * 9
+        + v2.m_charv.size() * 3
+        + 25 * v1.m_charv.size() * v1.m_charv.size() / 128;
+}
+
+size_t Val64::op_mod_varcost(const Val64 &v1, const Val64 &v2)
+{
+    // BIP#ops:
+    // |OP_MOD
+    // |length(A) x 7 + length(B) x 4 + 25 x length(A)^2 / 128
+    return v1.m_charv.size() * 7
+        + v2.m_charv.size() * 4
+        + 25 * v1.m_charv.size() * v1.m_charv.size() / 128;
 }

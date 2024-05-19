@@ -33,6 +33,7 @@ static void lshift_bench(benchmark::Bench& bench, size_t bits)
 {
     Val64 *v641[MAX_ITERS];
     size_t vecsize = bench_size(), maxsize = vecsize + bits / 8 + 1;
+    size_t varcost = 0;
 
     // Turn bits into a vector array.
     Val64 v2(bits);
@@ -44,7 +45,7 @@ static void lshift_bench(benchmark::Bench& bench, size_t bits)
 
     size_t n = 0;
     bench.run([&] {
-        bool ok = Val64::op_upshift(*v641[n++], v2, maxsize);
+        bool ok = Val64::op_upshift(*v641[n++], v2, maxsize, varcost);
         assert(ok);
         assert(n < MAX_ITERS);
     });
@@ -100,6 +101,7 @@ BENCHMARK(Val64LShift, benchmark::PriorityLevel::LOW);
 static void rshift_bench(benchmark::Bench& bench, size_t bits)
 {
     Val64 *v641[MAX_ITERS];
+    size_t varcost = 0;
 
     // Turn bits into a vector array.
     Val64 v2(bits);
@@ -111,7 +113,7 @@ static void rshift_bench(benchmark::Bench& bench, size_t bits)
 
     size_t n = 0;
     bench.run([&] {
-        Val64::op_downshift(*v641[n++], v2);
+        Val64::op_downshift(*v641[n++], v2, varcost);
         assert(n < MAX_ITERS);
     });
 }
@@ -169,10 +171,11 @@ static void add_bench(benchmark::Bench& bench)
 {
     std::vector<unsigned char> v1(bench_size(), 1), v2(bench_size(), 1);
     size_t n = 0;
+    size_t varcost = 0;
 
     bench.run([&] {
         Val64 v641(v1), v642(v2);
-        Val64::op_add(v641, v642);
+        Val64::op_add(v641, v642, varcost);
         v1 = v641.move_to_valtype();
         v2 = v642.move_to_valtype();
         n++;
@@ -237,10 +240,11 @@ static void sub_bench(benchmark::Bench& bench)
 {
     std::vector<unsigned char> v1(bench_size(), 0xFF), v2(bench_size(), 1);
     size_t n = 0;
+    size_t varcost = 0;
 
     bench.run([&] {
         Val64 v641(v1), v642(v2);
-        Val64::op_sub(v641, v642);
+        Val64::op_sub(v641, v642, varcost);
         v1 = v641.move_to_valtype();
         v2 = v642.move_to_valtype();
         n++;
@@ -307,10 +311,11 @@ BENCHMARK(Val64SubNaive, benchmark::PriorityLevel::LOW);
 static void or_bench(benchmark::Bench& bench)
 {
     std::vector<unsigned char> v1(bench_size(), 1), v2(bench_size(), 1);
+    size_t varcost = 0;
 
     bench.run([&] {
         Val64 v641(v1), v642(v2);
-        Val64::op_or(v641, v642);
+        Val64::op_or(v641, v642, varcost);
         v1 = v641.move_to_valtype();
         v2 = v642.move_to_valtype();
     });
@@ -360,10 +365,11 @@ BENCHMARK(Val64OrNaive, benchmark::PriorityLevel::LOW);
 static void invert_bench(benchmark::Bench& bench)
 {
     std::vector<unsigned char> v1(bench_size(), 1);
+    size_t varcost = 0;
 
     bench.run([&] {
         Val64 v641(v1);
-        Val64::op_invert(v641);
+        Val64::op_invert(v641, varcost);
         v1 = v641.move_to_valtype();
     });
     assert(v1.size() == bench_size());

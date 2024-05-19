@@ -36,37 +36,45 @@ public:
     // Convert to a valtype: CLEARS THE VAL64!
     std::vector<unsigned char> move_to_valtype();
 
+    // &varcost here is always increased by the operation.
+
     // Convert to a 64 bit, or max if it's too large.
-    uint64_t to_u64_ceil(size_t max) const;
+    uint64_t to_u64_ceil(size_t max, size_t &varcost) const;
 
     // Invert this to convert to boolean.
-    bool is_zero() const;
+    bool is_zero(size_t &varcost) const;
 
     // Returns -1 if this < v2, 0 if equal, 1 if this > v2.
-    int cmp(const Val64 &v2) const;
+    int cmp(const Val64 &v2, size_t &varcost) const;
 
     // We use explicit names here, to show that these are *not* generic operations, but consensus constrained.
-    static void op_add(Val64 &v1, Val64 &v2);
-    static void op_1add(Val64 &v1);
+    static void op_add(Val64 &v1, Val64 &v2, size_t &varcost);
+    static void op_1add(Val64 &v1, size_t &varcost);
 
     // if v1 < v2: returns false, mangles v1.
     // otherwise: returns true, sets v1 to v1 - v2.
-    static bool op_sub(Val64 &v1, const Val64 &v2);
-    static bool op_1sub(Val64 &v1);
+    static bool op_sub(Val64 &v1, const Val64 &v2, size_t &varcost);
+    static bool op_1sub(Val64 &v1, size_t &varcost);
 
     // Returns false if v1 would exceed max_size.
-    static bool op_upshift(Val64 &v1, const Val64 &v2, size_t max_size);
-    static void op_downshift(Val64 &v1, const Val64 &v2);
+    static bool op_upshift(Val64 &v1, const Val64 &v2, size_t max_size, size_t &varcost);
+    static void op_downshift(Val64 &v1, const Val64 &v2, size_t &varcost);
 
     // Like shift 1, but normalize.
-    static void op_2mul(Val64 &v1);
-    static void op_2div(Val64 &v1);
+    static void op_2mul(Val64 &v1, size_t &varcost);
+    static void op_2div(Val64 &v1, size_t &varcost);
 
-    static void op_invert(Val64 &v1);
+    static void op_invert(Val64 &v1, size_t &varcost);
 
-    static void op_and(Val64 &v1, Val64 &v2);
-    static void op_or(Val64 &v1, Val64 &v2);
-    static void op_xor(Val64 &v1, Val64 &v2);
+    static void op_and(Val64 &v1, Val64 &v2, size_t &varcost);
+    static void op_or(Val64 &v1, Val64 &v2, size_t &varcost);
+    static void op_xor(Val64 &v1, Val64 &v2, size_t &varcost);
+
+    // These three are potentially v. expensive, so we must
+    // check varops varcost *before* we evaluate them:
+    static size_t op_mul_varcost(const Val64 &v1, const Val64 &v2);
+    static size_t op_div_varcost(const Val64 &v1, const Val64 &v2);
+    static size_t op_mod_varcost(const Val64 &v1, const Val64 &v2);
 
     // Non-const, since might switch variables.
     static Val64 op_mul(Val64 &v1, Val64 &v2);

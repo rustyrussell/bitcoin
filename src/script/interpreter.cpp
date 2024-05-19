@@ -465,10 +465,14 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
     execdata.m_codeseparator_pos = 0xFFFFFFFFUL;
     execdata.m_codeseparator_pos_init = true;
 
+    // FIXME: hand this in based on tx weight not MAX_BLOCK_WEIGHT!
+    uint64_t remaining_budget = UINT64_C(4000000) * VAROPS_BUDGET_PER_BYTE;
+
     try
     {
         for (; pc < pend; ++opcode_pos) {
             bool fExec = vfExec.all_true();
+            size_t varcost = 0;
 
             //
             // Read instruction
@@ -570,7 +574,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         Val64 v(stacktop(-1));
                         // 32 bit limit: anything greater is an equivalent
                         // "always fail".
-                        int64_t nl = v.to_u64_ceil(UINT64_C(0x100000000));
+                        int64_t nl = v.to_u64_ceil(UINT64_C(0x100000000), varcost);
                         nLockTime = CScriptNum(nl);
                     } else {
                     // Note that elsewhere numeric opcodes are limited to
@@ -622,7 +626,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         Val64 v(stacktop(-1));
                         // 32 bit limit: anything greater is an equivalent
                         // "always fail".
-                        int64_t ns = v.to_u64_ceil(UINT64_C(0x100000000));
+                        int64_t ns = v.to_u64_ceil(UINT64_C(0x100000000), varcost);
                         nSequence = CScriptNum(ns);
                     } else {
                     nSequence = CScriptNum(stacktop(-1), fRequireMinimal, 5);
@@ -713,7 +717,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                     bool fValue;
                     if (sigversion == SigVersion::TAPSCRIPT_V2) {
-                        fValue = Val64(stacktop(-1)).to_u64_ceil(1);
+                        fValue = Val64(stacktop(-1)).to_u64_ceil(1, varcost);
                     } else {
                         fValue = CastToBool(stacktop(-1));
                     }
@@ -828,7 +832,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     valtype &vch = stacktop(-1);
                     bool result;
                     if (sigversion == SigVersion::TAPSCRIPT_V2) {
-                        result = Val64(vch).to_u64_ceil(1);
+                        result = Val64(vch).to_u64_ceil(1, varcost);
                     } else {
                         result = CastToBool(vch);
                     }
@@ -901,7 +905,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     if (sigversion == SigVersion::TAPSCRIPT_V2) {
                         Val64 v(stacktop(-1));
 
-                        n = v.to_u64_ceil(stack.size());
+                        n = v.to_u64_ceil(stack.size(), varcost);
                     } else {
                         n = CScriptNum(stacktop(-1), fRequireMinimal).getint();
                     }
@@ -1017,17 +1021,17 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         switch (opcode)
                         {
                         case OP_1ADD:
-                            Val64::op_1add(v64);
+                            Val64::op_1add(v64, varcost);
                             break;
                         case OP_1SUB:
-                            if (!Val64::op_1sub(v64))
+                            if (!Val64::op_1sub(v64, varcost))
                                 return set_error(serror, SCRIPT_ERR_SUB_UNDERFLOW);
                             break;
                         case OP_NOT:
-                            v64 = Val64(v64.is_zero() ? 1 : 0);
+                            v64 = Val64(v64.is_zero(varcost) ? 1 : 0);
                             break;
                         case OP_0NOTEQUAL:
-                            v64 = Val64(v64.is_zero() ? 0 : 1);
+                            v64 = Val64(v64.is_zero(varcost) ? 0 : 1);
                             break;
                         default:
                             assert(!"invalid opcode");
@@ -1076,48 +1080,50 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         // These place result into v1.
                         switch (opcode) {
                         case OP_ADD:
-                            Val64::op_add(v1, v2);
+                            Val64::op_add(v1, v2, varcost);
                             break;
 
                         case OP_SUB:
-                            if (!Val64::op_sub(v1, v2))
+                            if (!Val64::op_sub(v1, v2, varcost))
                                 return set_error(serror, SCRIPT_ERR_SUB_UNDERFLOW);
                             break;
                         case OP_BOOLAND:
-                            v1 = Val64(!v1.is_zero() && !v2.is_zero());
+                            // Careful: don't shortcut varcost calc!
+                            v1 = Val64(!v1.is_zero(varcost) & !v2.is_zero(varcost));
                             break;
                         case OP_BOOLOR:
-                            v1 = Val64(!v1.is_zero() || !v2.is_zero());
+                            // Careful: don't shortcut varcost calc!
+                            v1 = Val64(!v1.is_zero(varcost) | !v2.is_zero(varcost));
                             break;
                         case OP_NUMEQUAL:
-                            v1 = Val64(v1.cmp(v2) == 0 ? 1 : 0);
+                            v1 = Val64(v1.cmp(v2, varcost) == 0 ? 1 : 0);
                             break;
                         case OP_NUMEQUALVERIFY:
-                            if (v1.cmp(v2) != 0)
+                            if (v1.cmp(v2, varcost) != 0)
                                 set_error(serror, SCRIPT_ERR_NUMEQUALVERIFY);
                             v1 = Val64(1);
                             break;
                         case OP_NUMNOTEQUAL:
-                            v1 = Val64(v1.cmp(v2) == 0 ? 0 : 1);
+                            v1 = Val64(v1.cmp(v2, varcost) == 0 ? 0 : 1);
                             break;
                         case OP_LESSTHAN:
-                            v1 = Val64(v1.cmp(v2) < 0 ? 1 : 0);
+                            v1 = Val64(v1.cmp(v2, varcost) < 0 ? 1 : 0);
                             break;
                         case OP_GREATERTHAN:
-                            v1 = Val64(v1.cmp(v2) > 0 ? 1 : 0);
+                            v1 = Val64(v1.cmp(v2, varcost) > 0 ? 1 : 0);
                             break;
                         case OP_LESSTHANOREQUAL:
-                            v1 = Val64(v1.cmp(v2) <= 0 ? 1 : 0);
+                            v1 = Val64(v1.cmp(v2, varcost) <= 0 ? 1 : 0);
                             break;
                         case OP_GREATERTHANOREQUAL:
-                            v1 = Val64(v1.cmp(v2) >= 0 ? 1 : 0);
+                            v1 = Val64(v1.cmp(v2, varcost) >= 0 ? 1 : 0);
                             break;
                         case OP_MIN:
-                            if (v1.cmp(v2) > 0)
+                            if (v1.cmp(v2, varcost) > 0)
                                 v1 = std::move(v2);
                             break;
                         case OP_MAX:
-                            if (v1.cmp(v2) < 0)
+                            if (v1.cmp(v2, varcost) < 0)
                                 v1 = std::move(v2);
                             break;
                         default:
@@ -1179,8 +1185,9 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                             !pop64(stack, v1)) {
                             return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                         }
-                        Val64 res = Val64(v1.cmp(v2) >= 0
-                                          && v1.cmp(v3) < 0 ? 1 : 0);
+                        // Careful: don't shortcut varcost calc!
+                        Val64 res = Val64((v1.cmp(v2, varcost) >= 0) &
+                                          (v1.cmp(v3, varcost) < 0) ? 1 : 0);
                         push64(stack, res);
                     } else {
                     // (x min max -- out)
@@ -1283,7 +1290,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         Val64 num(stacktop(-2));
 
                         if (success)
-                            Val64::op_1add(num);
+                            Val64::op_1add(num, varcost);
 
                         numvec = num.move_to_valtype();
                     } else {
@@ -1417,7 +1424,12 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                     valtype &vch1 = stacktop(-2);
                     const valtype &vch2 = stacktop(-1);
- 
+
+                    // BIP#ops:
+                    // |OP_CAT
+                    // |(Sum of two operand lengths) x 2
+                    varcost += (vch1.size() + vch2.size()) * 2;
+                    
                     vch1.insert(vch1.end(), vch2.begin(), vch2.end());
  
                     popstack(stack);
@@ -1435,8 +1447,16 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     }
                     valtype &vch = stacktop(-1);
 
-                    uint64_t begin = len_v64.to_u64_ceil(vch.size());
-                    uint64_t len = len_v64.to_u64_ceil(vch.size() - begin);
+                    // BIP#ops:
+                    // |OP_SUBSTR
+                    // |(Sum of lengths of LEN and BEGIN operands) +
+                    //  (MIN(Value of first operand (LEN),
+                    //   Length of operand A - Value of BEGIN,
+                    //   0)
+                    //  x 2
+                    uint64_t begin = len_v64.to_u64_ceil(vch.size(), varcost);
+                    uint64_t len = len_v64.to_u64_ceil(vch.size() - begin, varcost);
+                    varcost += len * 2;
                     vch.erase(vch.begin() + begin, vch.begin() + begin + len);
                 }
                 break;
@@ -1450,7 +1470,11 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                     }
                     valtype &vch = stacktop(-1);
-                    uint64_t offset = offset_v64.to_u64_ceil(vch.size());
+
+                    // BIP#ops:
+                    // |OP_LEFT
+                    // |Length of OFFSET operand
+                    uint64_t offset = offset_v64.to_u64_ceil(vch.size(), varcost);
                     vch.erase(vch.begin() + offset, vch.end());
                 }
                 break;
@@ -1464,7 +1488,12 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                     }
                     valtype &vch = stacktop(-1);
-                    uint64_t offset = offset_v64.to_u64_ceil(vch.size());
+
+                    // BIP#ops:
+                    // |OP_RIGHT
+                    // |Length of OFFSET operand + (Length of A minus value of OFFSET, or 0 if OFFSET is greater) x 2
+                    uint64_t offset = offset_v64.to_u64_ceil(vch.size(), varcost);
+                    varcost += (vch.size() - offset) * 2;
                     vch.erase(vch.begin(), vch.begin() + offset);
                 }
                 break;
@@ -1481,9 +1510,9 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // Puts result back in v64a
                     switch (opcode)
                     {
-                    case OP_INVERT: Val64::op_invert(v64); break;
-                    case OP_2MUL:   Val64::op_2mul(v64); break;
-                    case OP_2DIV:   Val64::op_2div(v64); break;
+                    case OP_INVERT: Val64::op_invert(v64, varcost); break;
+                    case OP_2MUL:   Val64::op_2mul(v64, varcost); break;
+                    case OP_2DIV:   Val64::op_2div(v64, varcost); break;
                     default:        assert(!"invalid opcode");
                     }
                     push64(stack, v64);
@@ -1510,27 +1539,38 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     switch (opcode)
                     {
                     case OP_AND:
-                        Val64::op_and(v64a, v64b);
+                        Val64::op_and(v64a, v64b, varcost);
                         break;
 
                     case OP_OR:
-                        Val64::op_or(v64a, v64b);
+                        Val64::op_or(v64a, v64b, varcost);
                         break;
 
                     case OP_XOR:
-                        Val64::op_xor(v64a, v64b);
+                        Val64::op_xor(v64a, v64b, varcost);
                         break;
 
                     case OP_MUL:
+                        // BIP#ops:
+                        // # Calculate the varops cost of the operation: if it exceeds the remaining varcost, fail.
+                        varcost = Val64::op_mul_varcost(v64a, v64b);
+                        if (varcost > remaining_budget)
+                            return set_error(serror, SCRIPT_ERR_VAROP_COUNT);
                         v64a = Val64::op_mul(v64a, v64b);
                         break;
 
                     case OP_DIV:
+                        varcost = Val64::op_div_varcost(v64a, v64b);
+                        if (varcost > remaining_budget)
+                            return set_error(serror, SCRIPT_ERR_VAROP_COUNT);
                         if (!Val64::op_div(v64a, v64b))
                             return set_error(serror, SCRIPT_ERR_DIVIDE_BY_ZERO);
                         break;
 
                     case OP_MOD:
+                        varcost = Val64::op_mod_varcost(v64a, v64b);
+                        if (varcost > remaining_budget)
+                            return set_error(serror, SCRIPT_ERR_VAROP_COUNT);
                         if (!Val64::op_mod(v64a, v64b)) 
                             return set_error(serror, SCRIPT_ERR_DIVIDE_BY_ZERO);
                         break;
@@ -1538,13 +1578,14 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     case OP_LSHIFT:
                         // BIP#ops: If A shifted by BITS would exceed the individual stack limit, fail.
                         if (!Val64::op_upshift(v64a, v64b,
-                                               MAX_TAPSCRIPT_V2_STACK_ELEMENT_SIZE)) {
+                                               MAX_TAPSCRIPT_V2_STACK_ELEMENT_SIZE,
+                                               varcost)) {
                             return set_error(serror, SCRIPT_ERR_STACK_SIZE);
                         }
                         break;
 
                     case OP_RSHIFT:
-                        Val64::op_downshift(v64a, v64b);
+                        Val64::op_downshift(v64a, v64b, varcost);
                         break;
 
                     default:
@@ -1573,6 +1614,11 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
             // Note: with all ops so far, violator would have to be top of stack
             if (max_size > MAX_TAPSCRIPT_V2_STACK_ELEMENT_SIZE)
                 return set_error(serror, SCRIPT_ERR_STACK_SIZE);
+
+            // Budget limits
+            if (varcost > remaining_budget)
+                return set_error(serror, SCRIPT_ERR_VAROP_COUNT);
+            remaining_budget -= varcost;
         }
     }
     catch (...)
@@ -2180,7 +2226,8 @@ static bool ExecuteWitnessScript(const Span<const valtype>& stack_span, const CS
     if (stack.size() != 1) return set_error(serror, SCRIPT_ERR_CLEANSTACK);
     bool result;
     if (sigversion == SigVersion::TAPSCRIPT_V2) {
-        result = Val64(stack.back()).to_u64_ceil(1);
+        size_t varcost = 0;
+        result = Val64(stack.back()).to_u64_ceil(1, varcost);
     } else {
         result = CastToBool(stack.back());
     }

@@ -203,6 +203,8 @@ BOOST_AUTO_TEST_CASE(val64_unaligned)
 
 BOOST_AUTO_TEST_CASE(val64_and_or_xor)
 {
+    // FIXME: Test varcosts!
+    size_t varcost = 0;
     for (bool unaligned: {false, true}) {
         Val64Test::set_force_unaligned(unaligned);
 
@@ -223,7 +225,7 @@ BOOST_AUTO_TEST_CASE(val64_and_or_xor)
                 {
                     Val64Test v64a(vec_setbit(i));
                     Val64Test v64b(vec_setbit(j));
-                    Val64::op_and(v64a, v64b);
+                    Val64::op_and(v64a, v64b, varcost);
                     CHECK(v64a.move_to_valtype() == expected_and);
                 }
 
@@ -231,7 +233,7 @@ BOOST_AUTO_TEST_CASE(val64_and_or_xor)
                 {
                     Val64Test v64a(vec_setbit(i));
                     Val64Test v64b(vec_setbit(j));
-                    Val64::op_or(v64a, v64b);
+                    Val64::op_or(v64a, v64b, varcost);
                     CHECK(v64a.move_to_valtype() == expected_or);
                 }
 
@@ -239,7 +241,7 @@ BOOST_AUTO_TEST_CASE(val64_and_or_xor)
                 {
                     Val64Test v64a(vec_setbit(i));
                     Val64Test v64b(vec_setbit(j));
-                    Val64::op_xor(v64a, v64b);
+                    Val64::op_xor(v64a, v64b, varcost);
                     CHECK(v64a.move_to_valtype() == expected_xor);
                 }
             }
@@ -276,7 +278,7 @@ BOOST_AUTO_TEST_CASE(val64_and_or_xor)
             {
                 Val64Test v64a(v1);
                 Val64Test v64b(v2);
-                Val64::op_and(v64a, v64b);
+                Val64::op_and(v64a, v64b, varcost);
                 CHECK(v64a.move_to_valtype() == expect_and);
             }
 
@@ -284,7 +286,7 @@ BOOST_AUTO_TEST_CASE(val64_and_or_xor)
             {
                 Val64Test v64a(v1);
                 Val64Test v64b(v2);
-                Val64::op_or(v64a, v64b);
+                Val64::op_or(v64a, v64b, varcost);
                 CHECK(v64a.move_to_valtype() == expect_or);
             }
 
@@ -292,7 +294,7 @@ BOOST_AUTO_TEST_CASE(val64_and_or_xor)
             {
                 Val64Test v64a(v1);
                 Val64Test v64b(v2);
-                Val64::op_xor(v64a, v64b);
+                Val64::op_xor(v64a, v64b, varcost);
                 CHECK(v64a.move_to_valtype() == expect_xor);
             }
         }
@@ -302,6 +304,8 @@ BOOST_AUTO_TEST_CASE(val64_and_or_xor)
 
 BOOST_AUTO_TEST_CASE(val64_add)
 {
+    // FIXME: Test varcosts!
+    size_t varcost = 0;
     for (bool unaligned: {false, true}) {
         Val64Test::set_force_unaligned(unaligned);
 
@@ -310,7 +314,7 @@ BOOST_AUTO_TEST_CASE(val64_add)
             for (size_t j = 0; j < 128; j++) {
                 Val64Test v64a(vec_setbit(i));
                 Val64Test v64b(vec_setbit(j));
-                Val64::op_add(v64a, v64b);
+                Val64::op_add(v64a, v64b, varcost);
 
                 // Check against expected vector.
                 std::vector<unsigned char> expected;
@@ -331,7 +335,7 @@ BOOST_AUTO_TEST_CASE(val64_add)
 
             Val64 v64a(almost);
             Val64 v64b(one);
-            Val64::op_add(v64a, v64b);
+            Val64::op_add(v64a, v64b, varcost);
             std::vector<unsigned char> res = v64a.move_to_valtype();
 
             std::vector<unsigned char> expect(i, 0);
@@ -362,7 +366,7 @@ BOOST_AUTO_TEST_CASE(val64_add)
             // Val64 version
             Val64 v64_1(v1), v64_2(v2);
 
-            Val64::op_add(v64_1, v64_2);
+            Val64::op_add(v64_1, v64_2, varcost);
             std::vector<unsigned char> res = v64_1.move_to_valtype();
 
             CHECK(res == expect);
@@ -373,6 +377,8 @@ BOOST_AUTO_TEST_CASE(val64_add)
 
 BOOST_AUTO_TEST_CASE(val64_sub)
 {
+    // FIXME: Test varcosts!
+    size_t varcost = 0;
     for (bool unaligned: {false, true}) {
         Val64Test::set_force_unaligned(unaligned);
 
@@ -384,7 +390,7 @@ BOOST_AUTO_TEST_CASE(val64_sub)
             Val64Test v64a(vec_setbit(i));
             Val64Test v64zero(zero);
 
-            bool res = Val64::op_sub(v64a, v64zero);
+            bool res = Val64::op_sub(v64a, v64zero, varcost);
             CHECK(res);
         
             CHECK(v64a.move_to_valtype() == vec_setbit(i));
@@ -397,7 +403,7 @@ BOOST_AUTO_TEST_CASE(val64_sub)
             Val64Test v64a(vec_setbit(i));
             Val64Test v64one(one);
 
-            bool res = Val64::op_sub(v64a, v64one);
+            bool res = Val64::op_sub(v64a, v64one, varcost);
             CHECK(res);
 
             std::vector<unsigned char> expected;
@@ -432,7 +438,7 @@ BOOST_AUTO_TEST_CASE(val64_sub)
             // Val64 version
             Val64 v64_1(v1), v64_2(v2);
 
-            bool neg = !Val64::op_sub(v64_1, v64_2);
+            bool neg = !Val64::op_sub(v64_1, v64_2, varcost);
             std::vector<unsigned char> res = v64_1.move_to_valtype();
 
             if (expect_neg) {
@@ -448,6 +454,8 @@ BOOST_AUTO_TEST_CASE(val64_sub)
 
 BOOST_AUTO_TEST_CASE(val64_cmp)
 {
+    // FIXME: Test varcosts!
+    size_t varcost = 0;
     for (bool unaligned: {false, true}) {
         Val64Test::set_force_unaligned(unaligned);
 
@@ -459,7 +467,7 @@ BOOST_AUTO_TEST_CASE(val64_cmp)
 
                 Val64 v64a(va);
                 Val64 v64b(vb);
-                int res = v64a.cmp(v64b);
+                int res = v64a.cmp(v64b, varcost);
 
                 int expected;
                 if (i == j)
@@ -514,6 +522,8 @@ BOOST_AUTO_TEST_CASE(val64_cmp)
 
 BOOST_AUTO_TEST_CASE(val64_upshift)
 {
+    // FIXME: Test varcosts!
+    size_t varcost = 0;
     for (bool unaligned: {false, true}) {
         Val64Test::set_force_unaligned(unaligned);
 
@@ -523,7 +533,7 @@ BOOST_AUTO_TEST_CASE(val64_upshift)
                 BOOST_TEST_MESSAGE("Upshift " << vector_to_string(va) << " by " << j);
 
                 Val64 v64a(va);
-                bool ok = Val64::op_upshift(v64a, val64_singleton(j), 1000);
+                bool ok = Val64::op_upshift(v64a, val64_singleton(j), 1000, varcost);
                 assert(ok);
                 va = v64a.move_to_valtype();
 
@@ -559,7 +569,7 @@ BOOST_AUTO_TEST_CASE(val64_upshift)
 
             // Val64 version
             Val64 v64(v1);
-            bool ok = Val64::op_upshift(v64, val64_singleton(sbits), 5000);
+            bool ok = Val64::op_upshift(v64, val64_singleton(sbits), 5000, varcost);
             assert(ok);
             v1 = v64.move_to_valtype();
 
@@ -571,6 +581,8 @@ BOOST_AUTO_TEST_CASE(val64_upshift)
 
 BOOST_AUTO_TEST_CASE(val64_downshift)
 {
+    // FIXME: Test varcosts!
+    size_t varcost = 0;
     for (bool unaligned: {false, true}) {
         Val64Test::set_force_unaligned(unaligned);
 
@@ -581,7 +593,7 @@ BOOST_AUTO_TEST_CASE(val64_downshift)
 
                 assert(va.size() == (i + 8) / 8);
                 Val64 v64a(va);
-                Val64::op_downshift(v64a, val64_singleton(j));
+                Val64::op_downshift(v64a, val64_singleton(j), varcost);
                 va = v64a.move_to_valtype();
 
                 std::vector<unsigned char> expected;
@@ -620,7 +632,7 @@ BOOST_AUTO_TEST_CASE(val64_downshift)
 
             // Val64 version
             Val64 v64(v1);
-            Val64::op_downshift(v64, val64_singleton(sbits));
+            Val64::op_downshift(v64, val64_singleton(sbits), varcost);
             v1 = v64.move_to_valtype();
 
             CHECK(v1 == expect);
@@ -723,6 +735,8 @@ BOOST_AUTO_TEST_CASE(val64_mul_vector)
 
 BOOST_AUTO_TEST_CASE(val64_mul)
 {
+    // FIXME: Test varcosts!
+    size_t varcost = 0;
     for (bool unaligned: {false, true}) {
         Val64Test::set_force_unaligned(unaligned);
 
@@ -767,7 +781,7 @@ BOOST_AUTO_TEST_CASE(val64_mul)
                 // Subtract 1 j.
                 Val64Test expected64(vec_setbit(i + j));
                 Val64Test single(vec_setbit(j));
-                bool ok = Val64::op_sub(expected64, single);
+                bool ok = Val64::op_sub(expected64, single, varcost);
                 assert(ok);
                 std::vector<unsigned char> expected = expected64.move_to_valtype();
 
@@ -811,6 +825,8 @@ BOOST_AUTO_TEST_CASE(val64_mul)
 
 BOOST_AUTO_TEST_CASE(val64_2mul)
 {
+    // FIXME: Test varcosts!
+    size_t varcost = 0;
     for (bool unaligned: {false, true}) {
         Val64Test::set_force_unaligned(unaligned);
 
@@ -827,7 +843,7 @@ BOOST_AUTO_TEST_CASE(val64_2mul)
                 BOOST_TEST_MESSAGE("2mul " << vector_to_string(va));
 
                 Val64 v64a(va);
-                Val64::op_2mul(v64a);
+                Val64::op_2mul(v64a, varcost);
                 va = v64a.move_to_valtype();
 
                 std::vector<unsigned char> expected;
@@ -860,7 +876,7 @@ BOOST_AUTO_TEST_CASE(val64_2mul)
 
             // Val64 version
             Val64 v64(v1);
-            Val64::op_2mul(v64);
+            Val64::op_2mul(v64, varcost);
             v1 = v64.move_to_valtype();
 
             CHECK(v1 == expect);
@@ -871,6 +887,8 @@ BOOST_AUTO_TEST_CASE(val64_2mul)
 
 BOOST_AUTO_TEST_CASE(val64_2div)
 {
+    // FIXME: Test varcosts!
+    size_t varcost = 0;
     for (bool unaligned: {false, true}) {
         Val64Test::set_force_unaligned(unaligned);
 
@@ -887,7 +905,7 @@ BOOST_AUTO_TEST_CASE(val64_2div)
 
                 BOOST_TEST_MESSAGE("2div " << vector_to_string(va));
                 Val64 v64a(va);
-                Val64::op_2div(v64a);
+                Val64::op_2div(v64a, varcost);
                 va = v64a.move_to_valtype();
 
                 std::vector<unsigned char> expected;
@@ -919,7 +937,7 @@ BOOST_AUTO_TEST_CASE(val64_2div)
 
             // Val64 version
             Val64 v64(v1);
-            Val64::op_2div(v64);
+            Val64::op_2div(v64, varcost);
             v1 = v64.move_to_valtype();
 
             CHECK(v1 == expect);
