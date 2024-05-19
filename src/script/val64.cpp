@@ -244,9 +244,9 @@ void Val64::trim_u64(size_t u64_index)
     assert(trimmed < sizeof(uint64_t));
 }
 
-// Add v1 into this (it is long enough) at word offset off.
-// Returns offset of last zero byte in result.  Will not overflow.
-size_t Val64::add_at_offset(const Val64 &v1, size_t off)
+// Add v1 into this at word offset shift_words.
+// Returns offset of last zero byte in result.
+size_t Val64::add_with_offset(const Val64 &v1, size_t shift_words, bool &carry)
 {
     le64 *vu64;
     const le64 *v1u64;
@@ -256,65 +256,39 @@ size_t Val64::add_at_offset(const Val64 &v1, size_t off)
     v1u64 = v1.access_u64(&v1u64len);
 
     // Little endian, overflow forward.
-    bool carry = false;
+    carry = false;
+    bool trimmed = false;
 
     // We track the last non-zero val, so we don't have
     // to traverse again to trim.
-    size_t trailing_zero = 0;
+    size_t trailing_zero = shift_words;
 
-    for (size_t i = 0; i < v1.u64_size(); ++i) {
+    for (size_t i = 0; i < u64_size(); ++i) {
         uint64_t u1, u2;
 
-        u1 = get(vu64, vu64len, i + off);
+        u1 = get(vu64, vu64len, shift_words + i);
         u2 = v1.get(v1u64, v1u64len, i);
 
         carry = __builtin_add_overflow(u1, carry, &u1);
         carry |= __builtin_add_overflow(u1, u2, &u1);
-        if (!set(vu64, vu64len, i + off, u1))
-            abort();
+        trimmed |= !set(vu64, vu64len, shift_words + i, u1);
         if (u1 != 0)
-            trailing_zero = i + 1;
+            trailing_zero = shift_words + i + 1;
     }
 
-    // You promised it wouldn't overflow
-    assert(!carry);
+    // Overflow at end causes trimmed flag to be set.
+    carry |= trimmed;
     return trailing_zero;
 }
     
 void Val64::op_add(Val64 &v1, Val64 &v2)
 {
-    le64 *v1u64;
-    const le64 *v2u64;
-    size_t v1u64len, v2u64len;
-
     binop_v1_longest(v1, v2);
 
-    v1u64 = v1.access_u64(&v1u64len);
-    v2u64 = v2.access_u64(&v2u64len);
+    bool carry;
+    size_t trailing_zero = v1.add_with_offset(v2, 0, carry);
 
-    // Little endian, overflow forward.
-    bool carry = false;
-    bool trimmed = false;
-
-    // We track the last non-zero val, so we don't have
-    // to traverse again to trim.
-    size_t trailing_zero = 0;
-
-    for (size_t i = 0; i < v1.u64_size(); ++i) {
-        uint64_t u1, u2;
-
-        u1 = v1.get(v1u64, v1u64len, i);
-        u2 = v2.get(v2u64, v2u64len, i);
-
-        carry = __builtin_add_overflow(u1, carry, &u1);
-        carry |= __builtin_add_overflow(u1, u2, &u1);
-        trimmed = !v1.set(v1u64, v1u64len, i, u1);
-        if (u1 != 0)
-            trailing_zero = i + 1;
-    }
-
-    // Final carry, or final set() trimmed
-    if (carry || trimmed)
+    if (carry)
         v1.m_charv.push_back(1);
     else
         v1.trim_u64(trailing_zero);
@@ -666,11 +640,13 @@ Val64 Val64::op_mul(Val64 &v1, Val64 &v2)
         // Now add into result at offset i.
         // Cannot overflow.  Worst case ret effectively adds 1 to v1[i],
         // which *still* doesn't quite overflow.
-        this_trailing_zero = ret.add_at_offset(scratch, i);
+        bool carry;
+        this_trailing_zero = ret.add_with_offset(scratch, i, carry);
+        assert(!carry);
 
-        // If we didn't write anything, don't update.
-        if (this_trailing_zero != 0)
-            trailing_zero = i + this_trailing_zero;
+        // If we wrote all zeros, don't update previous best.
+        if (this_trailing_zero != i)
+            trailing_zero = this_trailing_zero;
     }
 
     ret.trim_u64(trailing_zero);

@@ -59,7 +59,7 @@ public:
     bool non_access_set(size_t index, uint64_t v) { return Val64::non_access_set(index, v); }
     const uint64_t *access_u64(size_t *num) const { return Val64::access_u64(num); }
     void mul_vector(Val64 &res, uint64_t mul) const { return Val64::mul_vector(res, mul); }
-    size_t add_at_offset(const Val64 &v1, size_t off) { return Val64::add_at_offset(v1, off); }
+    size_t add_with_offset(const Val64 &v1, size_t off, bool &carry) { return Val64::add_with_offset(v1, off, carry); }
     int cmp_with_offset(const Val64 &v1, size_t off) { return Val64::cmp_with_offset(v1, off); }
     std::vector<uint64_t> copy_vector() {
         std::vector<uint64_t> v;
@@ -626,25 +626,35 @@ BOOST_AUTO_TEST_CASE(val64_downshift)
     }
 }
 
-BOOST_AUTO_TEST_CASE(val64_add_at_offset)
+BOOST_AUTO_TEST_CASE(val64_add_with_offset)
 {
     Val64Test res(std::vector<unsigned char>(sizeof(uint64_t) * 2));
 
     // 0xFFFFFFFFFFFFFFFF
     const Val64Test u64_max(std::vector<unsigned char>(sizeof(uint64_t), 0xff));
     size_t trailing_zero;
+    bool carry;
 
     // Add at offset 0.
-    trailing_zero = res.add_at_offset(u64_max, 0);
+    trailing_zero = res.add_with_offset(u64_max, 0, carry);
     assert(res.get(0) == 0xFFFFFFFFFFFFFFFFULL);
     assert(res.get(1) == 0);
     assert(trailing_zero == 1);
+    assert(!carry);
 
     // Add at offset 1.
-    trailing_zero = res.add_at_offset(u64_max, 1);
+    trailing_zero = res.add_with_offset(u64_max, 1, carry);
     assert(res.get(0) == 0xFFFFFFFFFFFFFFFFULL);
     assert(res.get(1) == 0xFFFFFFFFFFFFFFFFULL);
-    assert(trailing_zero == 1);
+    assert(trailing_zero == 2);
+    assert(!carry);
+
+    // Add one more, should carry.
+    trailing_zero = res.add_with_offset(Val64(1), 1, carry);
+    assert(res.get(0) == 0xFFFFFFFFFFFFFFFFULL);
+    assert(res.get(1) == 0);
+    assert(carry);
+    assert(trailing_zero == 3);
 }
     
 BOOST_AUTO_TEST_CASE(val64_mul_vector)

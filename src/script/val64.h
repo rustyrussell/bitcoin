@@ -119,8 +119,9 @@ protected:
     // (*this) cmp (v2 << shift_words*64)
     int cmp_with_offset(const Val64 &v2, size_t shift_words) const;
     
-    // Addition within *this at word offset (for multiply).
-    size_t add_at_offset(const Val64 &v1, size_t off);
+    // (*this) += (v2 << shift_words*64)
+    // Returns trailing zero offset, sets carry on overflow.
+    size_t add_with_offset(const Val64 &v1, size_t shift_words, bool &carry);
 
     // Mulitply this by mul, place into res.
     void mul_vector(Val64 &res, uint64_t mul) const;
