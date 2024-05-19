@@ -849,7 +849,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // (x -- x x)
                     if (stack.size() < 1)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    valtype vch = stacktop(-1);
+                    const valtype &vch = stacktop(-1);
                     stack.push_back(vch);
                 }
                 break;
