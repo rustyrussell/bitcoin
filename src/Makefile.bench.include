@@ -106,5 +106,8 @@ bitcoin_bench: $(BENCH_BINARY)
 bench: $(BENCH_BINARY) FORCE
 	$(BENCH_BINARY)
 
+bench-adventure: $(BENCH_BINARY)
+	@../share/bench-adventure.sh
+
 bitcoin_bench_clean : FORCE
 	rm -f $(CLEAN_BITCOIN_BENCH) $(bench_bench_bitcoin_OBJECTS) $(BENCH_BINARY)
