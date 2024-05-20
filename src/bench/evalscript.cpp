@@ -5,132 +5,137 @@
 #include <script/script.h>
 #include <unistd.h>
 
-/* To figure out worst possible case for a block, note that you can
- * have 400 of these!  Also, this limit only applies for v0 and v1 segwit.
- */
-#define BENCH_SCRIPT_SIZE (10000)
-
-static size_t get_bytes(size_t default_val)
+static size_t get_op_bytes(size_t default_val, const char *var)
 {
-	const char *env = getenv("EVALSCRIPT_BYTES");
-	if (!env)
+	if (!var)
 		return default_val;
-	return atol(env);
-}	
+	return atol(var);
+}
 
+static size_t get_op1_bytes(size_t default_val = MAX_TAPSCRIPT_V2_STACK_ELEMENT_SIZE)
+{
+	return get_op_bytes(default_val, "EVALSCRIPT_OP1_BYTES");
+}
+
+static size_t get_op2_bytes(size_t default_val = MAX_TAPSCRIPT_V2_STACK_ELEMENT_SIZE)
+{
+	return get_op_bytes(default_val, "EVALSCRIPT_OP2_BYTES");
+}
+
+// op1 is top of stack, op2 is second on stack.
 static void BenchEvalScript(benchmark::Bench& bench,
 							const CScript &script,
-							std::vector<std::vector<unsigned char> > &stack,
-							size_t size)
+							const std::vector<unsigned char> > &op1,
+							const std::vector<unsigned char> > &op2)
 {
 	BaseSignatureChecker checker;
 	ScriptExecutionData sdata;
-	bench.batch(BENCH_SCRIPT_SIZE).unit("ops").run([&] {
+	bench.unit("ops").run([&] {
+		std::vector<std::vector<unsigned char> > stack;
+		// Deliberately, top of stack is the cache-colder one, for worst-case
+		stack.resize(2);
+		stack[1] = op1;
+		stack[0] = op2;
 		assert(EvalScript(stack, script, 0, checker,
 						  SigVersion::TAPSCRIPT, sdata, NULL));
 	});
 }
 
-// If the only limit were total stack usage
-static const size_t MAX_POSSIBLE_STACK = MAX_SCRIPT_ELEMENT_SIZE * MAX_STACK_SIZE;
-// If we're doing OP_DUP or OP_EQUAL each one can only use half the possible stack.
-static const size_t MAX_POSSIBLE_STACK_2OF = MAX_POSSIBLE_STACK / 2;
-// Two dups?  Can only use a third
-static const size_t MAX_POSSIBLE_STACK_3OF = MAX_POSSIBLE_STACK / 3;
-
-static void EvalScriptDupDrop(benchmark::Bench& bench)
+// Empty case.
+static void EvalScriptNopNop(benchmark::Bench& bench)
 {
+	std::vector<unsigned char> > op1(get_op1_bytes()), op2(get_op2_bytes());
 	CScript script;
-	std::vector<std::vector<unsigned char> > stack;
-	size_t ops = 0;
 
-	// Create maximum theoretical script
-	while (script.size() < BENCH_SCRIPT_SIZE) {
-		script << OP_DUP << OP_DROP;
-		ops++;
-	}
+	script << OP_NOP4 << OP_NOP4;
 
-	stack.resize(1);
-	stack[0].resize(get_bytes(MAX_POSSIBLE_STACK_2OF));
-
-	BenchEvalScript(bench, script, stack, MAX_POSSIBLE_STACK_2OF * ops);
+	BenchEvalScript(bench, script, op1, op2);
 }
-BENCHMARK(EvalScriptDupDrop, benchmark::LOW);
+BENCHMARK(EvalScriptNopNop, benchmark::LOW);
 
-static void EvalScriptDupDupEqualVerify(benchmark::Bench& bench)
+// BIP#ops: We assume that the manipulation of the stack vector itself (e.g. OP_DROP) is negligible.
+static void EvalScriptDropDrop(benchmark::Bench& bench)
 {
+	std::vector<unsigned char> > op1(get_op1_bytes()), op2(get_op2_bytes());
 	CScript script;
-	std::vector<std::vector<unsigned char> > stack;
-	size_t ops = 0;
 
-	// Create maximum theoretical script
-	while (script.size() < BENCH_SCRIPT_SIZE) {
-		script << OP_DUP << OP_DUP << OP_EQUALVERIFY;
-		ops++;
-	}
+	script << OP_DROP << OP_DROP;
 
-	// Note: lshift could make it easier to make large things
-	stack.resize(1);
-	stack[0].resize(get_bytes(MAX_POSSIBLE_STACK_3OF));
-
-	BenchEvalScript(bench, script, stack, stack[0].size() * ops);
+	BenchEvalScript(bench, script, op1, op2);
 }
-BENCHMARK(EvalScriptDupDupEqualVerify, benchmark::LOW);
+BENCHMARK(EvalScriptDropDrop, benchmark::LOW);
 
-static void EvalScriptDupSHADrop(benchmark::Bench& bench)
+static void EvalScriptVerifyDrop(benchmark::Bench& bench)
 {
+	std::vector<unsigned char> > op1(get_op1_bytes()), op2(get_op2_bytes());
 	CScript script;
-	std::vector<std::vector<unsigned char> > stack;
-	size_t ops = 0;
 
-	// Create maximum theoretical script
-	while (script.size() < BENCH_SCRIPT_SIZE) {
-		script << OP_DUP << OP_SHA256 << OP_DROP;
-		ops++;
-	}
+	// Right at the tail, to force worst-case traversal
+	op1.at(op1.size()-1) = 1;
+	script << OP_VERIFY << OP_DROP;
 
-	stack.resize(1);
-	stack[0].resize(get_bytes(MAX_POSSIBLE_STACK_2OF));
-
-	BenchEvalScript(bench, script, stack, stack[0].size() * ops);
+	BenchEvalScript(bench, script, op1, op2);
 }
-BENCHMARK(EvalScriptDupSHADrop, benchmark::LOW);
+BENCHMARK(EvalScriptVerifyDrop, benchmark::LOW);
 
-static void EvalScriptDupNopDrop(benchmark::Bench& bench)
+// This variant uses the cache-hot(ter) stack element.
+static void EvalScriptDropVerify(benchmark::Bench& bench)
 {
+	std::vector<unsigned char> > op1(get_op1_bytes()), op2(get_op2_bytes());
 	CScript script;
-	std::vector<std::vector<unsigned char> > stack;
-	size_t ops = 0;
 
-	// Create maximum theoretical script
-	while (script.size() < BENCH_SCRIPT_SIZE) {
-		script << OP_DUP << OP_NOP4 << OP_DROP;
-		ops++;
-	}
+	// Right at the tail, to force worst-case traversal
+	op1.at(op1.size()-1) = 1;
+	script << OP_DROP << OP_VERIFY;
 
-	stack.resize(1);
-	stack[0].resize(get_bytes(MAX_POSSIBLE_STACK_2OF));
-
-	BenchEvalScript(bench, script, stack, stack[0].size() * ops);
+	BenchEvalScript(bench, script, op1, op2);
 }
-BENCHMARK(EvalScriptDupNopDrop, benchmark::LOW);
+BENCHMARK(EvalScriptDropVerify, benchmark::LOW);
 
-static void EvalScriptDupDup2DropMax(benchmark::Bench& bench)
+// This modifies the element, so we can compare read costs vs r/w costs.
+static void EvalScriptInvertDrop(benchmark::Bench& bench)
 {
+	std::vector<unsigned char> > op1(get_op1_bytes()), op2(get_op2_bytes());
 	CScript script;
-	std::vector<std::vector<unsigned char> > stack;
-	size_t ops = 0;
 
-	// Create maximum theoretical script
-	while (script.size() < BENCH_SCRIPT_SIZE) {
-		script << OP_DUP << OP_DUP << OP_2DROP;
-		ops++;
-	}
+	script << OP_INVERT << OP_DROP;
 
-	// Note: lshift could make it easier to make large things
-	stack.resize(1);
-	stack[0].resize(MAX_POSSIBLE_STACK_3OF);
-
-	BenchEvalScript(bench, script, stack, MAX_POSSIBLE_STACK_3OF * ops);
+	BenchEvalScript(bench, script, op1, op2);
 }
-BENCHMARK(EvalScriptDupDup2DropMax, benchmark::LOW);
+BENCHMARK(EvalScriptInvertDrop, benchmark::LOW);
+
+// Hot cache variant
+static void EvalScriptDropInvert(benchmark::Bench& bench)
+{
+	std::vector<unsigned char> > op1(get_op1_bytes()), op2(get_op2_bytes());
+	CScript script;
+
+	script << OP_DROP << OP_INVERT;
+
+	BenchEvalScript(bench, script, op1, op2);
+}
+BENCHMARK(EvalScriptDropInvert, benchmark::LOW);
+
+// This writes the element, so we can compare read costs vs write costs.
+static void EvalScriptNipDup(benchmark::Bench& bench)
+{
+	std::vector<unsigned char> > op1(get_op1_bytes()), op2(get_op2_bytes());
+	CScript script;
+
+	script << OP_NIP << OP_DUP;
+
+	BenchEvalScript(bench, script, op1, op2);
+}
+BENCHMARK(EvalScriptNipDup, benchmark::LOW);
+
+// Hot cache variant
+static void EvalScriptDropDup(benchmark::Bench& bench)
+{
+	std::vector<unsigned char> > op1(get_op1_bytes()), op2(get_op2_bytes());
+	CScript script;
+
+	script << OP_DROP << OP_DUP;
+
+	BenchEvalScript(bench, script, op1, op2);
+}
+BENCHMARK(EvalScriptDropDup, benchmark::LOW);
