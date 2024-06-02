@@ -31,6 +31,7 @@
 #include <script/bitcoinconsensus.h>
 #endif
 
+#include <chrono>
 #include <cstdint>
 #include <fstream>
 #include <string>
@@ -1899,4 +1900,81 @@ BOOST_AUTO_TEST_CASE(compute_tapleaf)
     BOOST_CHECK_EQUAL(ComputeTapleafHash(0xc2, Span(script)), tlc2);
 }
 
+static size_t get_val(size_t default_val, const char *var)
+{
+	const char *env = getenv(var);
+	if (!env || atol(env) == 0)
+		return default_val;
+	return atol(env);
+}
+
+static void BenchEvalScript(const CScript &script,
+                            const std::vector<unsigned char> &op1,
+                            const std::vector<unsigned char> &op2,
+                            const char *name)
+{
+	BaseSignatureChecker checker;
+	ScriptExecutionData sdata;
+	ScriptError serror;
+	size_t cooling = get_val(0, "EVALSCRIPT_COOLING_BYTES");
+
+	std::vector<unsigned char> cool1(cooling/2, cooling/7), cool2(cooling/2, cooling/15);
+    if (cooling/2)
+        std::cerr << "Cooling using " << cooling << "bytes!" << std::endl;
+
+    using namespace std::chrono;
+
+	auto start = high_resolution_clock::now();
+	for (int i = 0; i < 10; ++i) {
+		std::vector<std::vector<unsigned char> > stack(2);
+
+		stack[0] = op2;
+        for (size_t i = 0; i < stack[0].size(); i++)
+            stack[0][i] += cooling++;
+
+		// In case we want to clear cache.
+        for (size_t i = 0; i < cool1.size(); i++) {
+            cool1[i] += cooling; 
+            cool2[i] += cooling;
+        }
+
+		// Set up stack: this does a copy, so these won't be cold.
+		stack[1] = op1;
+        for (size_t i = 0; i < stack[1].size(); i++)
+            stack[1][i] += cooling++;
+
+		if (!EvalScript(stack, script, 0, checker,
+						SigVersion::TAPSCRIPT_V2, sdata, &serror)) {
+			std::cerr << "EvalScript error " << ScriptErrorString(serror) << std::endl;
+			assert(0);
+		}
+	}
+	auto stop = high_resolution_clock::now();
+	auto msec = duration_cast<milliseconds>(stop - start).count();
+
+    assert(cooling);
+	std::cerr << "Time elapsed for: " << name << "(10x) is " << msec << " ms" << std::endl;
+}
+
+BOOST_AUTO_TEST_CASE(invert_cold)
+{
+	std::vector<unsigned char> op1(4000000), op2(4000000);
+	CScript script;
+
+	script << OP_DROP << OP_INVERT;
+
+	BenchEvalScript(script, op1, op2, "invert_cold");
+}
+
+BOOST_AUTO_TEST_CASE(invert_hot)
+{
+	std::vector<unsigned char> op1(4000000), op2(4000000);
+	CScript script;
+
+	script << OP_INVERT;
+
+	BenchEvalScript(script, op1, op2, "invert_hot");
+}
+
 BOOST_AUTO_TEST_SUITE_END()
+

@@ -98,6 +98,9 @@ uint64_t Val64::to_u64_ceil(size_t max, size_t &varcost) const
         return max;
 
     // Now make sure rest, if any, is zero.
+    // FIXME: We could use the memeqzero trick here, but we use
+    // this in OP_VERIFY as a baseline for a worst-case read,
+    // and memeqzero not representative of manual iteration
     for (size_t i = 1; i < u64_size(); i++) {
         if (get(vu64, vu64len, i) != 0)
             return max;

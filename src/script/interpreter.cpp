@@ -466,7 +466,8 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
     execdata.m_codeseparator_pos_init = true;
 
     // FIXME: hand this in based on tx weight not MAX_BLOCK_WEIGHT!
-    uint64_t remaining_budget = UINT64_C(4000000) * VAROPS_BUDGET_PER_BYTE;
+//    uint64_t remaining_budget = UINT64_C(4000000) * VAROPS_BUDGET_PER_BYTE;
+    uint64_t remaining_budget = UINT64_MAX;    
 
     try
     {
