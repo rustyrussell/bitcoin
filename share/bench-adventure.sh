@@ -36,6 +36,11 @@ dramatic_pause()
     $NOSLEEP || sleep "$1"
 }
 
+wait_for_more()
+{
+    $NOSLEEP || (echo -n "--more--"; read REPLY)
+}
+
 # benchname [op1len] [op2len]
 run_bench()
 {
@@ -97,16 +102,16 @@ result_end()
     echo
     dramatic_pause 2
 }
-    
-warn()
+
+# desc basetime testtime minpercent maxpercent
+warn_if()
 {
-    echo "*** THIS IS WEIRD: $1"
-    echo "Please report these results for $MNAME:"
-    shift
-    for arg; do
-	run_bench $arg $DEFAULT_LARGE $DEFAULT_LARGE
-	run_bench $arg $DEFAULT_SMALL $DEFAULT_SMALL
-    done
+    PERCENT=$(echo "100 * $3 / $2 - 100" | bc)
+    if [ $PERCENT -lt $4 ] || [ $PERCENT -gt $5 ]; then
+	echo "*** That's weird for $1: I expect $4% to $5% difference, not $PERCENT%!"
+	echo Please report results!
+	wait_for_more
+    fi
 }
 
 percent_and_dir()
@@ -137,7 +142,7 @@ Welcome to  ____                      _
 
 EOF
 
-dramatic_pause 5
+dramatic_pause 2
 
 banner <<EOF
 
@@ -150,7 +155,7 @@ There is a small cat here.
 EOF
 
 $BANNERS || printf "> "
-dramatic_pause 5
+dramatic_pause 10
 
 banner <<EOF
 Sorry, not *that* kind of adventure!
@@ -187,6 +192,8 @@ BLOCK_VALIDATION_SECONDS=$(printf %.4g $(echo $BLOCK_VALIDATION_NSEC / 10^9 | bc
 result "1 Schnorr signature check" $SCHNORR_TIME
 result_end "A block full of 80,000 schnorr signatures" $BLOCK_VALIDATION_NSEC "($BLOCK_VALIDATION_SECONDS seconds)"
 
+wait_for_more
+
 banner <<EOF
 We consider two possibilities.  In the first ("small) we set the maximum stack size at 400 kilobytes, with a maximum of 800 kilobytes: this lets you fit two standard transactions on the stack.
 
@@ -218,13 +225,13 @@ banner <<EOF
 
 EOF
 
-[ $(echo "$(echo $LARGE_DESC | cut -d% -f1) >= 10" | bc) = 0 ] || warn "Large DROP time is $LARGE_DESC!" EvalScriptNopNop EvalScriptDropDrop
-[ $(echo "$(echo $SMALL_DESC | cut -d% -f1) >= 10" | bc) = 0 ] || warn "Small DROP time is $SMALL_DESC!" EvalScriptNopNop EvalScriptDropDrop
+warn_if "4MB drop time compared to 4MB nop time" $LARGE_DROPDROP_TIME $LARGE_NOPNOP_TIME -10 10
+warn_if "400kB drop time compared to 4MB nop time" $SMALL_DROPDROP_TIME $SMALL_NOPNOP_TIME -10 10
 
-dramatic_pause 2
+wait_for_more
 
 banner <<EOF
-Now we look at the increase in time, when we simply read the maximal stack values in script.  We use OP_VERIFY (twice) for this, and two elements which are all zeros until the very last byte, so it has to look through them all.  Similarly, we look at simply comparing them:
+Now we look at the increase in time, when we simply read the maximal stack values in script.  We use OP_VERIFY (twice) for this, and two elements which are all zeros until the very last byte, so it has to look through them all.
 
 EOF
 
@@ -232,44 +239,93 @@ LARGE_VERIFY_TIME=$(large_benchrel EvalScriptVerifyVerify $LARGE_DROPDROP_TIME)
 result "Verifying 4MB x 2" "$LARGE_VERIFY_TIME"
 SMALL_VERIFY_TIME=$(small_benchrel EvalScriptVerifyVerify $SMALL_DROPDROP_TIME)
 result "Verifying 400kB x 2" "$SMALL_VERIFY_TIME"
-LARGE_EQUALS_TIME=$(large_benchrel EvalScriptEqual $LARGE_DROPDROP_TIME)
-result "Comparing 4MB x 2" "$LARGE_EQUALS_TIME"
-SMALL_EQUALS_TIME=$(small_benchrel EvalScriptEqual $SMALL_DROPDROP_TIME)
-result_end "Comparing 400kB x 2" "$SMALL_EQUALS_TIME"
+
+wait_for_more
 
 banner <<EOF
-Now let's copy a single maximal element (twice, to be fair) (OP_DUP).
-
-EOF
-
-LARGE_DUP_TIME=$(large_benchrel EvalScriptDropDupDropDup $LARGE_DROPDROP_TIME)
-SMALL_DUP_TIME=$(benchrel EvalScriptDropDupDropDup $SMALL_DROPDROP_TIME $DEFAULT_SMALL $DEFAULT_SMALL)
-result "Copy 4MB x 2  " "$LARGE_DUP_TIME"
-result_end "Copy 400kB x 2" "$SMALL_DUP_TIME"
-
-banner <<EOF
-Now let's rewrite both maximal elements (OP_INVERT):
+Now instead of just reading, let's try changing both maximal elements (OP_INVERT):
 
 EOF
 
 LARGE_INVERT_TIME=$(large_benchrel EvalScriptInvertDropInvert $LARGE_DROPDROP_TIME)
 result "Rewrite 4MB x 2  " "$LARGE_INVERT_TIME"
-SMALL_INVERT_TIME=$(benchrel EvalScriptInvertDropInvert $SMALL_DROPDROP_TIME $DEFAULT_SMALL $DEFAULT_SMALL)
+SMALL_INVERT_TIME=$(small_benchrel EvalScriptInvertDropInvert $SMALL_DROPDROP_TIME $DEFAULT_SMALL $DEFAULT_SMALL)
 result_end "Rewrite 400kB x 2" "$SMALL_INVERT_TIME"
 
+LARGE_MODIFY_VS_READ_DESC=$(percent_and_dir $LARGE_INVERT_TIME $LARGE_VERIFY_TIME)
+SMALL_MODIFY_VS_READ_DESC=$(percent_and_dir $SMALL_INVERT_TIME $SMALL_VERIFY_TIME)
+
 banner <<EOF
-We can actually split this into two halves, we can see that doing only half the size can be more than twice as fast as doing the whole thing (technically part1 is fresher in the cache than part2, but that often is only in the noise):
+In other words, we can say that for 4MB objects, modifying is $LARGE_MODIFY_VS_READ_DESC than reading, and for 400kB objects, modifying is $SMALL_MODIFY_VS_READ_DESC than reading.
+
+EOF
+
+warn_if "4MB modify compared to 4MB read" $LARGE_VERIFY_TIME $LARGE_INVERT_TIME 0 500
+warn_if "400k modify compared to 400k read" $SMALL_VERIFY_TIME $SMALL_INVERT_TIME 0 500
+
+wait_for_more
+
+banner <<EOF
+Each of these is literally pulling 64-bits into the CPU at a time: for the moment this is deliberately not optimized in our implementation.  Modern CPUs have special instructions to deal with a lot of data at once, called SIMD (single instruction, multiple data), and they use them for standard things like comparisons and copies.
+
+Here's the speedup when we use the standard routines (which will use those capabilities):
+EOF
+
+LARGE_EQUALS_TIME=$(large_benchrel EvalScriptEqual $LARGE_DROPDROP_TIME)
+SMALL_EQUALS_TIME=$(small_benchrel EvalScriptEqual $SMALL_DROPDROP_TIME)
+
+LARGE_EQUALS_VS_READ_DESC=$(percent_and_dir $LARGE_EQUALS_TIME $LARGE_VERIFY_TIME)
+SMALL_EQUALS_VS_READ_DESC=$(percent_and_dir $SMALL_EQUALS_TIME $SMALL_VERIFY_TIME)
+
+result "Comparing 4MB x 2" "$LARGE_EQUALS_TIME" "($LARGE_EQUALS_VS_READ_DESC)"
+result "Comparing 400kB x 2" "$SMALL_EQUALS_TIME" "($SMALL_EQUALS_VS_READ_DESC)"
+
+warn_if "4MB SIMD read vs 4MB manual read" $LARGE_EQUALS_TIME $LARGE_VERIFY_TIME -80 0
+warn_if "400kB SIMD read vs 400kB manual read" $SMALL_EQUALS_TIME $SMALL_VERIFY_TIME -80 0
+
+LARGE_DUP_TIME=$(large_benchrel EvalScriptDropDupDropDup $LARGE_DROPDROP_TIME)
+SMALL_DUP_TIME=$(small_benchrel EvalScriptDropDupDropDup $SMALL_DROPDROP_TIME)
+LARGE_DUP_VS_MODIFY_DESC=$(percent_and_dir $LARGE_DUP_TIME $LARGE_INVERT_TIME)
+SMALL_DUP_VS_MODIFY_DESC=$(percent_and_dir $SMALL_DUP_TIME $SMALL_INVERT_TIME)
+
+result "Copy 4MB x 2  " "$LARGE_DUP_TIME" "($LARGE_DUP_VS_MODIFY_DESC)"
+result "Copy 400kB x 2" "$SMALL_DUP_TIME" "($SMALL_DUP_VS_MODIFY_DESC)"
+
+warn_if "4MB SIMD write vs 4MB manual invert" $LARGE_DUP_TIME $LARGE_INVERT_TIME -80 0
+warn_if "400kB SIMD write vs 400kB manual invert" $SMALL_DUP_TIME $SMALL_INVERT_TIME -80 0
+
+wait_for_more
+
+banner <<EOF
+As an aside, we can actually split this into two halves, we can see that doing only half the size can be more than twice as fast as doing the whole thing.  This is an effect of different levels of cache, and since we care about the worst case, we try to measure the largest possible inputs.
+
+Technically part1 is fresher in the cache than part2, but that often is only in the noise:
 
 EOF
 
 LARGE_INVERT1_TIME=$(large_benchrel EvalScriptInvert $LARGE_DROPDROP_TIME)
-result "Rewrite 4MB (part 1)  " "$LARGE_INVERT1_TIME" "("$(percent_and_dir $LARGE_INVERT1_TIME $(($LARGE_INVERT_TIME / 2)) )")"
 LARGE_INVERT2_TIME=$(large_benchrel EvalScriptDropInvert $LARGE_DROPDROP_TIME)
-result "Rewrite 4MB (part 2)  " "$LARGE_INVERT2_TIME" "("$(percent_and_dir $LARGE_INVERT2_TIME $(($LARGE_INVERT_TIME / 2)) )")"
-SMALL_INVERT1_TIME=$(benchrel EvalScriptInvert $SMALL_DROPDROP_TIME $DEFAULT_SMALL $DEFAULT_SMALL)
-result "Rewrite 400kB (part 1)" "$SMALL_INVERT1_TIME" "("$(percent_and_dir $SMALL_INVERT1_TIME $(($SMALL_INVERT_TIME / 2)) )")"
-SMALL_INVERT2_TIME=$(benchrel EvalScriptDropInvert $SMALL_DROPDROP_TIME $DEFAULT_SMALL $DEFAULT_SMALL)
-result_end "Rewrite 400kB (part 2)" "$SMALL_INVERT2_TIME" "("$(percent_and_dir $SMALL_INVERT2_TIME $(($SMALL_INVERT_TIME / 2)) )")"
+SMALL_INVERT1_TIME=$(small_benchrel EvalScriptInvert $SMALL_DROPDROP_TIME)
+SMALL_INVERT2_TIME=$(small_benchrel EvalScriptDropInvert $SMALL_DROPDROP_TIME)
+
+result "Rewrite 4MB (part 1)  " "$LARGE_INVERT1_TIME"
+result "Rewrite 4MB (part 2)  " "$LARGE_INVERT2_TIME" "$(percent_and_dir $LARGE_INVERT2_TIME $LARGE_INVERT2_TIME)"
+result "Rewrite 400kB (part 1)" "$SMALL_INVERT1_TIME"
+result "Rewrite 400kB (part 2)" "$SMALL_INVERT2_TIME" "$(percent_and_dir $SMALL_INVERT2_TIME $SMALL_INVERT2_TIME)"
+
+LARGE_REWRITE_2PART_VS_1=$(percent_and_dir $((LARGE_INVERT1_TIME + LARGE_INVERT2_TIME)) $LARGE_INVERT_TIME)
+SMALL_REWRITE_2PART_VS_1=$(percent_and_dir $((SMALL_INVERT1_TIME + SMALL_INVERT2_TIME)) $SMALL_INVERT_TIME)
+
+banner <<EOF
+So, doing it in two parts:
+  Rewrite 4MB (2 parts) is $LARGE_REWRITE_2PART_VS_1 than rewrite in 1 part
+  Rewrite 400kB (2 parts) is $SMALL_REWRITE_2PART_VS_1 than rewrite in 1 part
+EOF
+
+warn_if "Rewrite 4MB in two parts vs one part" $((LARGE_INVERT1_TIME + LARGE_INVERT2_TIME)) $LARGE_INVERT_TIME
+warn_if "Rewrite 400kB in two parts vs one part" $((SMALL_INVERT1_TIME + SMALL_INVERT2_TIME)) $SMALL_INVERT_TIME
+
+wait_for_more
 
 # 1 byte invert = INVERT_TIME / 8M.
 # => bytes per block validation = BLOCK_VALIDATION_NSEC / (INVERT_TIME / 8M)
@@ -325,7 +381,9 @@ result "Add 400kBx2 (with overflow)" $SMALL_ADD_OVERFLOW_TIME
 LARGE_SUB_TIME=$(large_benchrel EvalScriptSub $LARGE_DROPDROP_TIME)
 result "Sub 4MBx2  " $LARGE_SUB_TIME
 SMALL_SUB_TIME=$(small_benchrel EvalScriptSub $SMALL_DROPDROP_TIME)
-result_end "Sub 400kBx2" $SMALL_SUB_TIME
+result "Sub 400kBx2" $SMALL_SUB_TIME
+
+wait_for_more
 
 banner <<EOF
 Multiplying (we use smaller elements here!):
@@ -341,6 +399,8 @@ MUL_40K_1_TIME=$(benchrel EvalScriptMul $DROPDROP_40K_1 1 40000)
 result "40,000 x 1     " $MUL_40K_1_TIME
 MUL_1_40K_TIME=$(benchrel EvalScriptMul $DROPDROP_40K_1 40000 1)
 result_end "1 x 40,000     " $MUL_1_40K_TIME
+
+wait_for_more
 
 banner <<EOF
 Dividing:
@@ -359,6 +419,8 @@ SMALL_DROPDROP_4M_1=$(benchof EvalScriptDropDrop 1 $DEFAULT_SMALL)
 SMALL_DIV_4M_1_TIME=$(small_benchrel EvalScriptDiv $SMALL_DROPDROP_4M_1 1)
 result_end "400kB / 1" $SMALL_DIV_4M_1_TIME
 
+wait_for_more
+
 banner <<EOF
 Finally, SHA256 for comparison:
 
@@ -376,6 +438,8 @@ banner <<EOF
 This implies that SHA256 is about $LARGE_SHA256_VERIFY_RATIO times more expensive than a simple modify for the 4MB limit, or $SMALL_SHA256_VERIFY_RATIO times more expensive for the 400kB limit
 
 EOF
+
+wait_for_more
 
 if [ -z "$BENCHFROM" ]; then
     echo Here are the final results:
