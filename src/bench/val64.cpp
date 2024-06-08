@@ -482,14 +482,3 @@ static void Val64DivMisalign(benchmark::Bench& bench)
 
 BENCHMARK(Val64DivAlign, benchmark::PriorityLevel::LOW);
 BENCHMARK(Val64DivMisalign, benchmark::PriorityLevel::LOW);
-
-// For a simple speed comparison
-static void Val64SHA256(benchmark::Bench& bench)
-{
-    std::vector<unsigned char> v1(bench_size(), 1);
-
-    bench.run([&] {
-        CSHA256().Write(v1.data(), v1.size()).Finalize(v1.data());
-    });
-}
-BENCHMARK(Val64SHA256, benchmark::PriorityLevel::LOW);
