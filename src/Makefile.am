@@ -108,6 +108,7 @@ endif
 
 if BUILD_BITCOIN_UTIL
   bin_PROGRAMS += bitcoin-util
+  bin_PROGRAMS += varops-util
 endif
 
 if BUILD_BITCOIN_CHAINSTATE
@@ -885,6 +886,25 @@ bitcoin_util_SOURCES += bitcoin-util-res.rc
 endif
 
 bitcoin_util_LDADD = \
+  $(LIBBITCOIN_COMMON) \
+  $(LIBBITCOIN_UTIL) \
+  $(LIBUNIVALUE) \
+  $(LIBBITCOIN_CONSENSUS) \
+  $(LIBBITCOIN_CRYPTO) \
+  $(LIBSECP256K1)
+#
+
+# varops-util binary #
+varops_util_SOURCES = varops-util.cpp
+varops_util_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+varops_util_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+varops_util_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) $(PTHREAD_FLAGS)
+
+if TARGET_WINDOWS
+varops_util_SOURCES += varops-util-res.rc
+endif
+
+varops_util_LDADD = \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UTIL) \
   $(LIBUNIVALUE) \
