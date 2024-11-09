@@ -1902,7 +1902,7 @@ static bool ExecuteWitnessScript(const Span<const valtype>& stack_span, const CS
 {
     std::vector<valtype> stack{stack_span.begin(), stack_span.end()};
 
-    if (sigversion == SigVersion::TAPSCRIPT) {
+    if (sigversion == SigVersion::TAPSCRIPT || sigversion == SigVersion::TAPSCRIPT_V2) {
         // OP_SUCCESSx processing overrides everything, including stack element size limits
         CScript::const_iterator pc = exec_script.begin();
         while (pc < exec_script.end()) {
@@ -1934,7 +1934,14 @@ static bool ExecuteWitnessScript(const Span<const valtype>& stack_span, const CS
 
     // Scripts inside witness implicitly require cleanstack behaviour
     if (stack.size() != 1) return set_error(serror, SCRIPT_ERR_CLEANSTACK);
-    if (!CastToBool(stack.back())) return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
+    bool result;
+    if (sigversion == SigVersion::TAPSCRIPT_V2) {
+        size_t varcost = 0;
+        result = Val64(stack.back()).to_u64_ceil(1, varcost);
+    } else {
+        result = CastToBool(stack.back());
+    }
+    if (!result) return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
     return true;
 }
 
