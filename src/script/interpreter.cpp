@@ -456,6 +456,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
     {
         for (; pc < pend; ++opcode_pos) {
             bool fExec = vfExec.all_true();
+            size_t varcost = 0;
 
             //
             // Read instruction
@@ -547,6 +548,15 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     if (stack.size() < 1)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
 
+                    CScriptNum nLockTime(0);
+
+                    if (sigversion == SigVersion::TAPSCRIPT_V2) {
+                        Val64 v(stacktop(-1));
+                        // 32 bit limit: anything greater is an equivalent
+                        // "always fail".
+                        int64_t nl = v.to_u64_ceil(UINT64_C(0x100000000), varcost);
+                        nLockTime = CScriptNum(nl);
+                    } else {
                     // Note that elsewhere numeric opcodes are limited to
                     // operands in the range -2**31+1 to 2**31-1, however it is
                     // legal for opcodes to produce results exceeding that
@@ -561,13 +571,14 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // Thus as a special case we tell CScriptNum to accept up
                     // to 5-byte bignums, which are good until 2**39-1, well
                     // beyond the 2**32-1 limit of the nLockTime field itself.
-                    const CScriptNum nLockTime(stacktop(-1), fRequireMinimal, 5);
+                    nLockTime = CScriptNum(stacktop(-1), fRequireMinimal, 5);
 
                     // In the rare event that the argument may be < 0 due to
                     // some arithmetic being done first, you can always use
                     // 0 MAX CHECKLOCKTIMEVERIFY.
                     if (nLockTime < 0)
                         return set_error(serror, SCRIPT_ERR_NEGATIVE_LOCKTIME);
+                    }
 
                     // Actually compare the specified lock time with the transaction.
                     if (!checker.CheckLockTime(nLockTime))
@@ -589,13 +600,23 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // nSequence, like nLockTime, is a 32-bit unsigned integer
                     // field. See the comment in CHECKLOCKTIMEVERIFY regarding
                     // 5-byte numeric operands.
-                    const CScriptNum nSequence(stacktop(-1), fRequireMinimal, 5);
+                    CScriptNum nSequence(0);
+
+                    if (sigversion == SigVersion::TAPSCRIPT_V2) {
+                        Val64 v(stacktop(-1));
+                        // 32 bit limit: anything greater is an equivalent
+                        // "always fail".
+                        int64_t ns = v.to_u64_ceil(UINT64_C(0x100000000), varcost);
+                        nSequence = CScriptNum(ns);
+                    } else {
+                    nSequence = CScriptNum(stacktop(-1), fRequireMinimal, 5);
 
                     // In the rare event that the argument may be < 0 due to
                     // some arithmetic being done first, you can always use
                     // 0 MAX CHECKSEQUENCEVERIFY.
                     if (nSequence < 0)
                         return set_error(serror, SCRIPT_ERR_NEGATIVE_LOCKTIME);
+                    }
 
                     // To provide for future soft-fork extensibility, if the
                     // operand has the disabled lock-time flag set,
@@ -674,7 +695,12 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // (false -- false) and return
                     if (stack.size() < 1)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    bool fValue = CastToBool(stacktop(-1));
+                    bool fValue;
+                    if (sigversion == SigVersion::TAPSCRIPT_V2) {
+                        fValue = Val64(stacktop(-1)).to_u64_ceil(1, varcost);
+                    } else {
+                        fValue = CastToBool(stacktop(-1));
+                    }
                     if (fValue)
                         popstack(stack);
                     else
@@ -787,13 +813,31 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                 case OP_IFDUP:
                 {
                     // (x - 0 | x x)
+                    if (sigversion == SigVersion::TAPSCRIPT_V2) {
+                        bool result;
+                        Val64 v64;
+                        if (!pop64(stack, v64))
+                            return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
+                        result = !v64.is_zero(varcost);
+                        std::vector<unsigned char> vch(v64.move_to_valtype());
+                        if (result)
+                            stack.push_back(vch);
+                        stack.push_back(std::move(vch));
+                    } else {
                     if (stack.size() < 1)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                     // Keep safe with references
                     stack.reserve(stack.size() + 1);
                     valtype &vch = stacktop(-1);
-                    if (CastToBool(vch))
+                    bool result;
+                    if (sigversion == SigVersion::TAPSCRIPT_V2) {
+                        result = Val64(vch).to_u64_ceil(1, varcost);
+                    } else {
+                        result = CastToBool(vch);
+                    }
+                    if (result)
                         stack.push_back(vch);
+                    }
                 }
                 break;
 
@@ -854,7 +898,14 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // (xn ... x2 x1 x0 n - ... x2 x1 x0 xn)
                     if (stack.size() < 2)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    int n = CScriptNum(stacktop(-1), fRequireMinimal).getint();
+                    int n;
+                    if (sigversion == SigVersion::TAPSCRIPT_V2) {
+                        Val64 v(stacktop(-1));
+
+                        n = v.to_u64_ceil(stack.size(), varcost);
+                    } else {
+                        n = CScriptNum(stacktop(-1), fRequireMinimal).getint();
+                    }
                     popstack(stack);
                     if (n < 0 || n >= (int)stack.size())
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
@@ -1124,15 +1175,28 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     if (stack.size() < 3) return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
 
                     const valtype& sig = stacktop(-3);
-                    const CScriptNum num(stacktop(-2), fRequireMinimal);
                     const valtype& pubkey = stacktop(-1);
 
                     bool success = true;
                     if (!EvalChecksig(sig, pubkey, pbegincodehash, pend, execdata, flags, checker, sigversion, serror, success)) return false;
+
+                    valtype numvec;
+                    if (sigversion == SigVersion::TAPSCRIPT_V2) {
+                        Val64 num(stacktop(-2));
+
+                        if (success)
+                            Val64::op_1add(num, varcost);
+
+                        numvec = num.move_to_valtype();
+                    } else {
+                        const CScriptNum num(stacktop(-2), fRequireMinimal);
+
+                        numvec = (num + (success ? 1 : 0)).getvch();
+                    }
                     popstack(stack);
                     popstack(stack);
                     popstack(stack);
-                    stack.push_back((num + (success ? 1 : 0)).getvch());
+                    stack.push_back(numvec);
                 }
                 break;
 
