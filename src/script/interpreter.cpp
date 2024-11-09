@@ -839,10 +839,15 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     popstack(stack);
                     if (n < 0 || n >= (int)stack.size())
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    valtype vch = stacktop(-n-1);
-                    if (opcode == OP_ROLL)
-                        stack.erase(stack.end()-n-1);
-                    stack.push_back(vch);
+                    if (opcode == OP_ROLL) {
+                        // rotate start, newstart, end.
+                        std::rotate(stack.end()-n-1, stack.end()-n, stack.end());
+                    } else {
+                        // Keep safe with references
+                        stack.reserve(stack.size() + 1);
+                        const valtype &vch = stacktop(-n-1);
+                        stack.push_back(vch);
+                    }
                 }
                 break;
 
