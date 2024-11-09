@@ -108,6 +108,7 @@ endif
 
 if BUILD_BITCOIN_UTIL
   bin_PROGRAMS += bitcoin-util
+  bin_PROGRAMS += varops-util
 endif
 
 if BUILD_BITCOIN_CHAINSTATE
@@ -653,6 +654,8 @@ libbitcoin_consensus_a_SOURCES = \
   script/script.h \
   script/script_error.cpp \
   script/script_error.h \
+  script/val64.cpp \
+  script/val64.h \
   serialize.h \
   span.h \
   tinyformat.h \
@@ -891,6 +894,25 @@ bitcoin_util_LDADD = \
   $(LIBSECP256K1)
 #
 
+# varops-util binary #
+varops_util_SOURCES = varops-util.cpp
+varops_util_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+varops_util_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+varops_util_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) $(PTHREAD_FLAGS)
+
+if TARGET_WINDOWS
+varops_util_SOURCES += varops-util-res.rc
+endif
+
+varops_util_LDADD = \
+  $(LIBBITCOIN_COMMON) \
+  $(LIBBITCOIN_UTIL) \
+  $(LIBUNIVALUE) \
+  $(LIBBITCOIN_CONSENSUS) \
+  $(LIBBITCOIN_CRYPTO) \
+  $(LIBSECP256K1)
+#
+
 # bitcoin-chainstate binary #
 bitcoin_chainstate_SOURCES = bitcoin-chainstate.cpp
 bitcoin_chainstate_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS)
@@ -971,6 +993,7 @@ libbitcoinkernel_la_SOURCES = \
   script/script_error.cpp \
   script/sigcache.cpp \
   script/solver.cpp \
+  script/val64.cpp \
   signet.cpp \
   streams.cpp \
   support/cleanse.cpp \

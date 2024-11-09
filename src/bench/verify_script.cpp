@@ -13,6 +13,7 @@
 #endif
 #include <script/script.h>
 #include <script/interpreter.h>
+#include <secp256k1.h>
 #include <streams.h>
 #include <test/util/transaction_utils.h>
 
@@ -99,5 +100,68 @@ static void VerifyNestedIfScript(benchmark::Bench& bench)
     });
 }
 
+
+static void VerifySchnorr(benchmark::Bench& bench)
+{
+    ECC_Start();
+
+    // Key pair.
+    CKey key;
+    static const std::array<unsigned char, 32> vchKey = {
+        {
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+        }
+    };
+    key.Set(vchKey.begin(), vchKey.end(), false);
+    CPubKey pubkey = key.GetPubKey();
+
+    std::vector<unsigned char> vchSig(64);
+    const uint256 hash = uint256::ONE;
+    key.SignSchnorr(hash, vchSig, NULL, hash);
+
+    XOnlyPubKey xpub(pubkey);
+    Span<const unsigned char> sigbytes(vchSig.data(), vchSig.size());
+    assert(sigbytes.size() == 64);
+
+    // Benchmark.
+    bench.run([&] {
+        bool res = xpub.VerifySchnorr(hash, sigbytes);
+        assert(res);
+    });
+    ECC_Stop();
+}
+
+static void VerifyTweakAdd(benchmark::Bench& bench)
+{
+    ECC_Start();
+
+    // To be a fair test, the tweak and pubkey have to start serialized
+    const unsigned char tweak[] = {
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32
+    };
+
+    std::array<unsigned char, 33> key = {
+        {
+            0x02, 0xba, 0xd0, 0x00, 0x00, 0x00, 0x00, 0xb8, 0x59, 0x92, 0xd9, 0x5d, 0x9a, 0x0d, 0x20, 0x64, 0x76, 0xe5, 0xcd, 0x22, 0x8d, 0xb1, 0xe6, 0x9e, 0x87, 0x1e, 0x18, 0x13, 0x12, 0xe5, 0x8e, 0x17, 0x9e, 
+        }
+    };
+
+    bool res;
+    secp256k1_pubkey pubkey;
+
+    res = secp256k1_ec_pubkey_parse(secp256k1_context_static, &pubkey,
+                                    key.data(), key.size());
+    assert(res);
+
+    // Benchmark.
+    bench.run([&] {
+        res = secp256k1_ec_pubkey_tweak_add(secp256k1_context_static, &pubkey, tweak);
+        assert(res);
+    });
+    ECC_Stop();
+}
+
 BENCHMARK(VerifyScriptBench, benchmark::PriorityLevel::HIGH);
 BENCHMARK(VerifyNestedIfScript, benchmark::PriorityLevel::HIGH);
+BENCHMARK(VerifySchnorr, benchmark::PriorityLevel::LOW);
+BENCHMARK(VerifyTweakAdd, benchmark::PriorityLevel::LOW);

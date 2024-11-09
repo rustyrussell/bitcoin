@@ -82,6 +82,11 @@ typedef enum ScriptError_t
     SCRIPT_ERR_OP_CODESEPARATOR,
     SCRIPT_ERR_SIG_FINDANDDELETE,
 
+    /* Tapscript v2 */
+    SCRIPT_ERR_DIVIDE_BY_ZERO,
+    SCRIPT_ERR_SUB_UNDERFLOW,
+    SCRIPT_ERR_VAROP_COUNT,
+    
     SCRIPT_ERR_ERROR_COUNT
 } ScriptError;
 

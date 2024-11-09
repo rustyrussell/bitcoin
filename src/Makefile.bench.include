@@ -2,9 +2,10 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-bin_PROGRAMS += bench/bench_bitcoin
+bin_PROGRAMS += bench/bench_bitcoin bench/bench_varops
 BENCH_SRCDIR = bench
 BENCH_BINARY = bench/bench_bitcoin$(EXEEXT)
+BENCH_VAROPS_BINARY = bench/bench_varops(EXEEXT)
 
 RAW_BENCH_FILES = \
   bench/data/block413567.raw
@@ -31,6 +32,7 @@ bench_bench_bitcoin_SOURCES = \
   bench/disconnected_transactions.cpp \
   bench/duplicate_inputs.cpp \
   bench/ellswift.cpp \
+  bench/evalscript.cpp \
   bench/examples.cpp \
   bench/gcs_filter.cpp \
   bench/hashpadding.cpp \
@@ -40,6 +42,7 @@ bench_bench_bitcoin_SOURCES = \
   bench/mempool_eviction.cpp \
   bench/mempool_stress.cpp \
   bench/merkle_root.cpp \
+  bench/micro.cpp \
   bench/nanobench.cpp \
   bench/nanobench.h \
   bench/peer_eviction.cpp \
@@ -53,8 +56,14 @@ bench_bench_bitcoin_SOURCES = \
   bench/streams_findbyte.cpp \
   bench/strencodings.cpp \
   bench/util_time.cpp \
+  bench/val64.cpp \
   bench/verify_script.cpp \
   bench/xor.cpp
+
+bench_bench_varops_SOURCES = \
+  bench/nanobench.cpp \
+  bench/nanobench.h \
+  bench/bench_varops.cpp
 
 nodist_bench_bench_bitcoin_SOURCES = $(GENERATED_BENCH_FILES)
 
@@ -93,13 +102,18 @@ bench_bench_bitcoin_SOURCES += bench/wallet_ismine.cpp
 bench_bench_bitcoin_LDADD += $(BDB_LIBS) $(SQLITE_LIBS)
 endif
 
+bench_bench_varops_CPPFLAGS = $(bench_bench_bitcoin_CPPFLAGS) -DGIT_VERSION='"$(shell git describe --always)"'
+bench_bench_varops_CXXFLAGS = $(bench_bench_bitcoin_CXXFLAGS)
+bench_bench_varops_LDFLAGS = $(bench_bench_bitcoin_LDFLAGS)
+bench_bench_varops_LDADD = $(bench_bench_bitcoin_LDADD)
+
 CLEAN_BITCOIN_BENCH = bench/*.gcda bench/*.gcno $(GENERATED_BENCH_FILES)
 
 CLEANFILES += $(CLEAN_BITCOIN_BENCH)
 
 bench/data.cpp: bench/data/block413567.raw.h
 
-bitcoin_bench: $(BENCH_BINARY)
+bitcoin_bench: $(BENCH_BINARY) $(BENCH_VAROPS_BINARY)
 
 bench: $(BENCH_BINARY) FORCE
 	$(BENCH_BINARY)
