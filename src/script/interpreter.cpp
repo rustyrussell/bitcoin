@@ -422,6 +422,14 @@ static void push64(std::vector<std::vector<unsigned char> >& stack, Val64 &v)
     stack.push_back(std::move(vch));
 }
 
+static void stack_push_costed(std::vector<std::vector<unsigned char> >& stack,
+                              const std::vector<unsigned char> &v,
+                              size_t &varcost)
+{
+    varcost += v.size();
+    stack.push_back(v);
+}
+
 bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptExecutionData& execdata, ScriptError* serror)
 {
     static const CScriptNum bnZero(0);
@@ -761,8 +769,11 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     stack.reserve(stack.size() + 2);
                     const valtype &vch1 = stacktop(-2);
                     const valtype &vch2 = stacktop(-1);
-                    stack.push_back(vch1);
-                    stack.push_back(vch2);
+                    // BIP#ops:
+                    // |OP_2DUP
+                    // |Sum of two operand lengths (COPYING)
+                    stack_push_costed(stack, vch1, varcost);
+                    stack_push_costed(stack, vch2, varcost);
                 }
                 break;
 
@@ -776,9 +787,12 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     const valtype &vch1 = stacktop(-3);
                     const valtype &vch2 = stacktop(-2);
                     const valtype &vch3 = stacktop(-1);
-                    stack.push_back(vch1);
-                    stack.push_back(vch2);
-                    stack.push_back(vch3);
+                    // BIP#ops:
+                    // |OP_3DUP
+                    // |Sum of three operand lengths (COPYING)
+                    stack_push_costed(stack, vch1, varcost);
+                    stack_push_costed(stack, vch2, varcost);
+                    stack_push_costed(stack, vch3, varcost);
                 }
                 break;
 
@@ -791,8 +805,11 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     stack.reserve(stack.size() + 2);
                     const valtype &vch1 = stacktop(-4);
                     const valtype &vch2 = stacktop(-3);
-                    stack.push_back(vch1);
-                    stack.push_back(vch2);
+                    // BIP#ops:
+                    // |OP_2OVER
+                    // |Sum of lengths of third and fourth-top stack entries (before) (COPYING)
+                    stack_push_costed(stack, vch1, varcost);
+                    stack_push_costed(stack, vch2, varcost);
                 }
                 break;
 
@@ -826,6 +843,10 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                             return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                         result = !v64.is_zero(varcost);
                         std::vector<unsigned char> vch(v64.move_to_valtype());
+                        // BIP#ops:
+                        // |OP_IFDUP
+                        // |(Length of top stack entry (before)) * 2 (COMPARINGZERO + COPYING)
+                        varcost += vch.size();
                         if (result)
                             stack.push_back(vch);
                         stack.push_back(std::move(vch));
@@ -879,7 +900,10 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // Keep safe with references
                     stack.reserve(stack.size() + 1);
                     const valtype &vch = stacktop(-1);
-                    stack.push_back(vch);
+                    // BIP#ops:
+                    // |OP_DUP
+                    // |Length of top stack entry (before) (COPYING)
+                    stack_push_costed(stack, vch, varcost);
                 }
                 break;
 
@@ -900,7 +924,10 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // Keep safe with references
                     stack.reserve(stack.size() + 1);
                     const valtype &vch = stacktop(-2);
-                    stack.push_back(vch);
+                    // BIP#ops:
+                    // |OP_OVER
+                    // |Length of second-top stack entry (before) (COPYING)
+                    stack_push_costed(stack, vch, varcost);
                 }
                 break;
 
@@ -915,6 +942,13 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     if (sigversion == SigVersion::TAPSCRIPT_V2) {
                         Val64 v(stacktop(-1));
 
+                        // BIP#ops:
+                        // |OP_ROLL
+                        // |Length of top stack entry (LENGTHCONV)
+
+                        // BIP#ops:
+                        // |OP_PICK
+                        // |Length of top stack entry + Length of N-th-from-top stack entry (before) (LENGTHCONV + COPYING)
                         n = v.to_u64_ceil(stack.size(), varcost);
                     } else {
                         n = CScriptNum(stacktop(-1), fRequireMinimal).getint();
@@ -929,7 +963,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         // Keep safe with references
                         stack.reserve(stack.size() + 1);
                         const valtype &vch = stacktop(-n-1);
-                        stack.push_back(vch);
+                        stack_push_costed(stack, vch, varcost);
                     }
                 }
                 break;
@@ -963,6 +997,10 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // Keep safe with references
                     stack.reserve(stack.size() + 1);
                     const valtype &vch = stacktop(-1);
+                    // BIP#ops:
+                    // |OP_TUCK
+                    // |Length of second-from-top stack entry (before) (COPYING)
+                    varcost += vch.size();
                     stack.insert(stack.end()-2, vch);
                 }
                 break;
