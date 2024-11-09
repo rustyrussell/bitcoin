@@ -844,8 +844,15 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                 case OP_DEPTH:
                 {
                     // -- stacksize
-                    CScriptNum bn(stack.size());
-                    stack.push_back(bn.getvch());
+                    valtype vch;
+                    if (sigversion == SigVersion::TAPSCRIPT_V2) {
+                        Val64 v(stack.size());
+                        vch = v.move_to_valtype();
+                    } else {
+                        CScriptNum bn(stack.size());
+                        vch = bn.getvch();
+                    }
+                    stack.push_back(vch);
                 }
                 break;
 
@@ -960,8 +967,15 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // (in -- in size)
                     if (stack.size() < 1)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
-                    CScriptNum bn(stacktop(-1).size());
-                    stack.push_back(bn.getvch());
+                    valtype vch;
+                    if (sigversion == SigVersion::TAPSCRIPT_V2) {
+                        Val64 v(stacktop(-1).size());
+                        vch = v.move_to_valtype();
+                    } else {
+                        CScriptNum bn(stacktop(-1).size());
+                        vch = bn.getvch();
+                    }
+                    stack.push_back(vch);
                 }
                 break;
 
