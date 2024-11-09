@@ -10,6 +10,7 @@
 #include <crypto/sha256.h>
 #include <pubkey.h>
 #include <script/script.h>
+#include <script/val64.h>
 #include <uint256.h>
 
 typedef std::vector<unsigned char> valtype;
@@ -401,6 +402,21 @@ static bool EvalChecksig(const valtype& sig, const valtype& pubkey, CScript::con
         break;
     }
     assert(false);
+}
+
+static bool pop64(std::vector<std::vector<unsigned char> >& stack, Val64 &v)
+{
+    if (stack.empty())
+        return false;
+    v.move_from_valtype(stacktop(-1));
+    popstack(stack);
+    return true;
+}
+
+static void push64(std::vector<std::vector<unsigned char> >& stack, Val64 &v)
+{
+    std::vector<unsigned char> vch(v.move_to_valtype());
+    stack.push_back(std::move(vch));
 }
 
 bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptExecutionData& execdata, ScriptError* serror)
